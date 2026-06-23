@@ -1,0 +1,6 @@
+DEVICE_ID = "UWF-01"
+
+MQTT_BROKER = "mqtt.example.com"
+MQTT_PORT = 1883
+
+UPLOAD_INTERVAL = 60
