@@ -14,9 +14,13 @@ import logging
 import traceback
 from datetime import datetime, timezone
 
+from pathlib import Path
 from config import settings
 from database.db_manager import DBManager
 from communication.api_publisher import APIPublisher
+
+# ─── Buat folder yang dibutuhkan ───────────────────────────────────────────
+Path("logs").mkdir(parents=True, exist_ok=True)
 
 # ─── Logger setup ─────────────────────────────────────────────────
 logging.basicConfig(

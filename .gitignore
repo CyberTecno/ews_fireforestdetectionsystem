@@ -216,3 +216,31 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+
+# ── WAJIB: jangan pernah commit file ini ke git ──────────────
+.env
+
+# ── Database lokal (data sensor, bisa besar) ─────────────────
+database/*.db
+database/*.db-shm
+database/*.db-wal
+
+# ── Log files ────────────────────────────────────────────────
+logs/
+*.log
+
+# ── Python cache ─────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# ── Virtual environment ───────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── OS files ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
