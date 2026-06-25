@@ -15,7 +15,7 @@ def _find_and_load_dotenv():
     Ini agar tidak peduli seberapa dalam struktur folder project-nya.
     """
     search_start = Path(__file__).resolve().parent  # mulai dari config/
-    for candidate in [search_start, *search_start.parents[:3]]:
+    for candidate in [search_start, *search_start.parents[:5]]:
         env_file = candidate / ".env"
         if env_file.exists():
             load_dotenv(env_file, override=False)
