@@ -1,0 +1,36 @@
+{
+  "mq2": {
+    "description": "Smoke / combustible gas (LPG, butane, smoke). Higher = worse.",
+    "warning_ppm": 300,
+    "critical_ppm": 1000
+  },
+  "mq135": {
+    "description": "Air quality (NH3, NOx, CO2-equivalent, smoke). Higher = worse.",
+    "warning_ppm": 400,
+    "critical_ppm": 1000
+  },
+  "flame": {
+    "description": "IR flame sensor - binary detection, any flame = immediate critical",
+    "trigger_on_detect": true
+  },
+  "bme280": {
+    "description": "Ambient temperature/humidity. High temp + low humidity = elevated fire risk.",
+    "temp_warning_c": 45,
+    "temp_critical_c": 60,
+    "humidity_low_percent": 30
+  },
+  "soil": {
+    "description": "Soil/ground moisture around the monitored area. Dry ground raises fire spread risk.",
+    "dry_percent": 20
+  },
+  "wind": {
+    "description": "Wind speed - strong wind accelerates fire spread risk.",
+    "high_speed_ms": 8,
+    "extreme_speed_ms": 15
+  },
+  "alarm": {
+    "consecutive_readings_required": 3,
+    "cooldown_seconds": 300,
+    "note": "Critical alarm only fires after N consecutive critical readings, to filter sensor noise/false positives. Cooldown prevents repeated Telegram/MQTT spam for the same ongoing event."
+  }
+}

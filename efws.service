@@ -1,0 +1,35 @@
+[Unit]
+Description=Early Fire Warning System (EFWS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# ── Ganti path sesuai lokasi install di Raspberry Pi ──
+WorkingDirectory=/home/pi/efws/efws
+ExecStart=/home/pi/efws/venv/bin/python main.py
+
+# ── Environment ───────────────────────────────────────
+Environment="EFWS_DEVICE_ID=efws-001"
+Environment="EFWS_RUN_MODE=hardware"
+Environment="EFWS_API_URL=https://your-api-server.com/api/v1/efws"
+Environment="EFWS_API_KEY=your_secret_key_here"
+# Environment="EFWS_LAT=-1.2654"
+# Environment="EFWS_LON=116.8312"
+
+# ── Restart policy ────────────────────────────────────
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+# ── Output ke journald (journalctl -u efws -f) ────────
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=efws
+
+# ── User (jalankan sebagai pi, bukan root) ────────────
+User=pi
+Group=pi
+
+[Install]
+WantedBy=multi-user.target

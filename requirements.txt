@@ -1,0 +1,16 @@
+# ─── Core (wajib) ────────────────────────────────────────────────
+requests>=2.31.0          # HTTP REST API publisher
+
+# ─── Hardware sensors (hanya saat RUN_MODE=hardware) ──────────────
+smbus2>=0.4.2             # I2C bus
+RPi.bme280>=0.2.4         # BME280 temp/hum/pressure
+Adafruit-ADS1x15>=1.0.2   # ADC untuk MQ-2, MQ-135, soil moisture
+RPi.GPIO>=0.7.0           # GPIO (flame, relay, buzzer)
+minimalmodbus>=2.1.0      # RS485 anemometer (Modbus RTU)
+pyserial>=3.5             # Serial (SIM7600 AT commands + Modbus)
+
+# ─── Development / testing ────────────────────────────────────────
+# Tidak ada dependensi tambahan; mock_sensors.py hanya pakai stdlib
+
+
+gpiozero
