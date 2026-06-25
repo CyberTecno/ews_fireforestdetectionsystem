@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-
 # ─── Cari .env secara otomatis (naik folder sampai ketemu) ───────────────────
 def _find_and_load_dotenv():
     """
@@ -18,13 +17,17 @@ def _find_and_load_dotenv():
     for candidate in [search_start, *search_start.parents[:5]]:
         env_file = candidate / ".env"
         if env_file.exists():
+            print(f"✅  Found .env at {env_file}, loading...")
             load_dotenv(env_file, override=False)
             return candidate   # return root yang ditemukan
     # Tidak ketemu .env — load_dotenv tetap jalan (baca dari env var sistem saja)
+    print("❌  .env not found, using system environment variables only.")
     load_dotenv(override=False)
     return search_start
 
 _ROOT = _find_and_load_dotenv()
+print("ROOT :", _ROOT)
+print("EFWS_API_URL =", os.getenv("EFWS_API_URL"))
 
 
 # ─── Helper ──────────────────────────────────────────────────────────────────
