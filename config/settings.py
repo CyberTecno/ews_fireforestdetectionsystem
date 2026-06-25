@@ -7,11 +7,25 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Struktur folder: efws_refactored/.env
-#                  efws_refactored/efws/config/settings.py  ← __file__
-# Jadi naik 3 level untuk sampai ke root project
-_ROOT = Path(__file__).resolve().parent.parent.parent
-load_dotenv(_ROOT / ".env", override=False)   # override=False: env var sistem lebih prioritas
+
+# ─── Cari .env secara otomatis (naik folder sampai ketemu) ───────────────────
+def _find_and_load_dotenv():
+    """
+    Cari file .env mulai dari lokasi settings.py, naik ke atas sampai 5 level.
+    Ini agar tidak peduli seberapa dalam struktur folder project-nya.
+    """
+    search_start = Path(__file__).resolve().parent  # mulai dari config/
+    for candidate in [search_start, *search_start.parents[:3]]:
+        env_file = candidate / ".env"
+        if env_file.exists():
+            load_dotenv(env_file, override=False)
+            return candidate   # return root yang ditemukan
+    # Tidak ketemu .env — load_dotenv tetap jalan (baca dari env var sistem saja)
+    load_dotenv(override=False)
+    return search_start
+
+_ROOT = _find_and_load_dotenv()
+
 
 # ─── Helper ──────────────────────────────────────────────────────────────────
 def _req(key: str) -> str:
@@ -20,7 +34,8 @@ def _req(key: str) -> str:
     if not val:
         raise EnvironmentError(
             f"\n\n  ❌  Environment variable '{key}' tidak ditemukan.\n"
-            f"      Salin .env.example ke .env lalu isi nilainya.\n"
+            f"      Pastikan file .env ada di root project dan sudah diisi.\n"
+            f"      Contoh: cp .env.example .env\n"
         )
     return val
 
@@ -45,11 +60,9 @@ DEVICE_LOCATION = {
 }
 
 # ─── Mode operasi ────────────────────────────────────────────────────────────
-# "mock"     → testing tanpa hardware (default)
-# "hardware" → akses GPIO/I2C nyata di Raspberry Pi
 RUN_MODE = _opt("EFWS_RUN_MODE", "mock")
 
-# ─── I2C / GPIO (nilai default sesuai pinout standar, jarang perlu diubah) ──
+# ─── I2C / GPIO ──────────────────────────────────────────────────────────────
 I2C_BUS           = _int("EFWS_I2C_BUS", 1)
 BME280_ADDRESS    = int(_opt("EFWS_BME280_ADDR", "0x76"), 16)
 ADS1115_ADDRESS   = int(_opt("EFWS_ADS1115_ADDR", "0x48"), 16)
@@ -75,11 +88,10 @@ SIM7600_BAUDRATE = _int("EFWS_SIM_BAUD", 115200)
 APN              = _opt("EFWS_APN", "internet")
 
 # ─── REST API ────────────────────────────────────────────────────────────────
-# WAJIB diisi di .env — tidak ada default agar tidak ada yang lupa mengisinya
 API_BASE_URL       = _req("EFWS_API_URL")
 API_DATA_ENDPOINT  = f"{API_BASE_URL}/data"
 API_ALARM_ENDPOINT = f"{API_BASE_URL}/alarm"
-API_SECRET_KEY     = _opt("EFWS_API_KEY", "")     # kosong = tidak ada auth
+API_SECRET_KEY     = _opt("EFWS_API_KEY", "")
 API_VERIFY_SSL     = _bool("EFWS_VERIFY_SSL", True)
 API_TIMEOUT_SEC    = _int("EFWS_API_TIMEOUT", 10)
 API_MAX_RETRIES    = _int("EFWS_API_RETRIES", 3)
