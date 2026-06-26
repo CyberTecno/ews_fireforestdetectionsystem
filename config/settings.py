@@ -10,11 +10,11 @@ from dotenv import load_dotenv
 # ─── Cari .env secara otomatis (naik folder sampai ketemu) ───────────────────
 def _find_and_load_dotenv():
     """
-    Cari file .env mulai dari lokasi settings.py, naik ke atas sampai 5 level.
+    Cari file .env mulai dari lokasi settings.py, naik ke atas sampai 2 level.
     Ini agar tidak peduli seberapa dalam struktur folder project-nya.
     """
     search_start = Path(__file__).resolve().parent  # mulai dari config/
-    for candidate in [search_start, *search_start.parents[:5]]:
+    for candidate in [search_start, *search_start.parents[:2]]:
         env_file = candidate / ".env"
         if env_file.exists():
             print(f"✅  Found .env at {env_file}, loading...")
