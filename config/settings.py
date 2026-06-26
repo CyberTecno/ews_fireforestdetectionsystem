@@ -103,6 +103,9 @@ API_RETRY_DELAY    = _int("EFWS_API_RETRY_DELAY", 5)
 # ─── Database lokal ──────────────────────────────────────────────────────────
 DB_PATH = _opt("EFWS_DB_PATH", str(_ROOT / "database" / "efws_data.db"))
 
+# ─── Log files ───────────────────────────────────────────────────────────────
+LOG_PATH = _opt("EFWS_LOG_PATH", str(_ROOT / "logs" / "efws.log"))
+
 # ─── Timing ──────────────────────────────────────────────────────────────────
 SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 5)
 API_PUBLISH_INTERVAL_SEC = _int("EFWS_PUBLISH_INTERVAL", 10)
