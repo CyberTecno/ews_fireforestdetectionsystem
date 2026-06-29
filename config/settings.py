@@ -18,11 +18,11 @@ def _find_and_load_dotenv():
         env_file = candidate / ".env"
         if env_file.exists():
             print(f"✅  Found .env at {env_file}, loading...")
-            load_dotenv(env_file, override=False)
+            load_dotenv(env_file, override=True)
             return candidate   # return root yang ditemukan
     # Tidak ketemu .env — load_dotenv tetap jalan (baca dari env var sistem saja)
     print("❌  .env not found, using system environment variables only.")
-    load_dotenv(override=False)
+    load_dotenv(override=True)
     return search_start
 
 _ROOT = _find_and_load_dotenv()

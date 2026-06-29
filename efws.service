@@ -28,8 +28,8 @@ StandardError=journal
 SyslogIdentifier=efws
 
 # ── User (jalankan sebagai pi, bukan root) ────────────
-User=pi
-Group=pi
+User=uwfadmin
+Group=uwfadmin
 
 [Install]
 WantedBy=multi-user.target
