@@ -1,38 +1,139 @@
 """
-TEST 4 — BME280 (Temperature / Humidity / Pressure, I2C)
-Usage: python3 tests/test_bme280.py
+TEST 4 — BME280 (Temperature / Humidity / Pressure)
+
+Continuous Monitoring
+Ctrl+C untuk keluar
+
+Usage:
+    python3 tests/test_bme280.py
 """
+
+import os
 import sys
 import time
-import os
+from datetime import datetime
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-print("=" * 60)
-print("  TEST BME280 (I2C)")
-print("=" * 60)
-print("Pastikan I2C sudah diaktifkan: sudo raspi-config -> Interface -> I2C -> Yes")
-print("Lalu cek device terdeteksi: i2cdetect -y 1  (harus muncul 0x76 atau 0x77)\n")
+print("=" * 70)
+print("              TEST BME280 (I2C)")
+print("=" * 70)
+print("Pastikan I2C aktif:")
+print("  sudo raspi-config -> Interface -> I2C -> Yes")
+print()
+print("Cek alamat sensor:")
+print("  i2cdetect -y 1")
+print("Harus muncul 0x76 atau 0x77")
+print()
 
 try:
     from sensors.bme280 import BME280Sensor
+
     sensor = BME280Sensor()
-    print("[OK] BME280 berhasil diinisialisasi.\n")
+
 except Exception as e:
-    print(f"[FAIL] Gagal inisialisasi: {e}")
+
+    print(f"[ERROR] Gagal inisialisasi BME280")
+    print(e)
+
     print("\nKemungkinan penyebab:")
-    print("  - I2C belum diaktifkan")
-    print("  - Alamat I2C salah (cek dengan i2cdetect -y 1, default 0x76)")
-    print("  - Wiring SDA/SCL terbalik atau longgar")
+    print("- I2C belum aktif")
+    print("- Wiring SDA/SCL salah")
+    print("- Alamat I2C salah")
+    print("- Sensor rusak")
+
     sys.exit(1)
 
-print("Membaca tiap 2 detik selama 20 detik (Ctrl+C untuk stop)...\n")
-try:
-    for i in range(10):
-        d = sensor.read()
-        print(f"temp={d['temperature_c']}°C | humidity={d['humidity_percent']}% | "
-              f"pressure={d['pressure_hpa']}hPa")
-        time.sleep(2)
-except KeyboardInterrupt:
-    pass
 
-print("\n[SELESAI] Nilai harus masuk akal (suhu ruangan 20-35°C) - kalau 0 atau angka aneh, cek wiring.")
+def check_temperature(t):
+    if t is None:
+        return "ERROR"
+
+    if t < -40 or t > 85:
+        return "ERROR"
+
+    if t < 0 or t > 60:
+        return "WARNING"
+
+    return "OK"
+
+
+def check_humidity(h):
+    if h is None:
+        return "ERROR"
+
+    if h < 0 or h > 100:
+        return "ERROR"
+
+    return "OK"
+
+
+def check_pressure(p):
+    if p is None:
+        return "ERROR"
+
+    if p < 300 or p > 1100:
+        return "WARNING"
+
+    return "OK"
+
+
+print("Monitoring dimulai...")
+print("Tekan Ctrl+C untuk berhenti.")
+
+try:
+
+    while True:
+
+        os.system("clear")
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        data = sensor.read()
+
+        temp = data["temperature_c"]
+        hum = data["humidity_percent"]
+        pres = data["pressure_hpa"]
+
+        print("=" * 70)
+        print("LIVE BME280 MONITOR")
+        print("=" * 70)
+
+        print(f"Waktu : {now}")
+        print()
+
+        print(f"Temperature : {temp:.2f} °C")
+        print(f"Humidity    : {hum:.2f} %")
+        print(f"Pressure    : {pres:.2f} hPa")
+
+        print()
+
+        print("Status")
+
+        print(f"Temperature : {check_temperature(temp)}")
+        print(f"Humidity    : {check_humidity(hum)}")
+        print(f"Pressure    : {check_pressure(pres)}")
+
+        print()
+
+        if (
+            check_temperature(temp) == "OK"
+            and check_humidity(hum) == "OK"
+            and check_pressure(pres) == "OK"
+        ):
+            print("✓ Sensor bekerja normal")
+
+        else:
+            print("⚠ Periksa sensor atau wiring")
+
+        print()
+        print("Ctrl+C untuk keluar")
+
+        time.sleep(2)
+
+except KeyboardInterrupt:
+
+    print("\n")
+    print("=" * 70)
+    print("Monitoring dihentikan.")
+    print("=" * 70)
