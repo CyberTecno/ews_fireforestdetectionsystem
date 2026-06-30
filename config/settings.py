@@ -65,18 +65,23 @@ DEVICE_LOCATION = {
 # ─── Mode operasi ────────────────────────────────────────────────────────────
 RUN_MODE = _opt("EFWS_RUN_MODE", "mock")
 
-# ─── I2C / GPIO ──────────────────────────────────────────────────────────────
+# ─── I2C (BME280 saja - sensor analog sekarang lewat MCP3008/SPI) ────────────
 I2C_BUS           = _int("EFWS_I2C_BUS", 1)
 BME280_ADDRESS    = int(_opt("EFWS_BME280_ADDR", "0x76"), 16)
-ADS1115_ADDRESS   = int(_opt("EFWS_ADS1115_ADDR", "0x48"), 16)
 
-ADC_CHANNEL_MQ2   = _int("EFWS_ADC_MQ2",   0)
-ADC_CHANNEL_MQ135 = _int("EFWS_ADC_MQ135", 1)
-ADC_CHANNEL_SOIL  = _int("EFWS_ADC_SOIL",  2)
+# ─── SPI / MCP3008 (ADC 8-channel untuk MQ-2, MQ-135, soil, flame AO) ────────
+SPI_BUS          = _int("EFWS_SPI_BUS", 0)
+SPI_DEVICE       = _int("EFWS_SPI_DEVICE", 0)
+SPI_MAX_SPEED_HZ = _int("EFWS_SPI_SPEED", 1350000)
+MCP3008_VREF     = _float("EFWS_MCP3008_VREF", 3.3)
+
+ADC_CHANNEL_MQ2       = _int("EFWS_ADC_MQ2",   0)
+ADC_CHANNEL_MQ135     = _int("EFWS_ADC_MQ135", 1)
+ADC_CHANNEL_SOIL      = _int("EFWS_ADC_SOIL",  2)
+ADC_CHANNEL_FLAME_AO  = _int("EFWS_ADC_FLAME_AO", 3)   # opsional, AO dari flame sensor 4-wire
 
 GPIO_FLAME_SENSOR = _int("EFWS_GPIO_FLAME",  17)
 GPIO_RELAY_SIREN  = _int("EFWS_GPIO_RELAY",  27)
-GPIO_BUZZER       = _int("EFWS_GPIO_BUZZER", 22)
 GPIO_STATUS_LED   = _int("EFWS_GPIO_LED",    23)
 
 # ─── Anemometer RS485 ────────────────────────────────────────────────────────

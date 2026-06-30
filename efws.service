@@ -5,16 +5,16 @@ Wants=network-online.target
 
 [Service]
 # ── Ganti path sesuai lokasi install di Raspberry Pi ──
-WorkingDirectory=/home/pi/efws/efws
+# Struktur project ini FLAT: main.py langsung di root project
+# (sejajar dengan venv/, .env, scripts/, logs/, database/)
+WorkingDirectory=/home/pi/efws
 ExecStart=/home/pi/efws/venv/bin/python main.py
 
 # ── Environment ───────────────────────────────────────
-Environment="EFWS_DEVICE_ID=efws-001"
-Environment="EFWS_RUN_MODE=hardware"
-Environment="EFWS_API_URL=https://your-api-server.com/api/v1/efws"
-Environment="EFWS_API_KEY=your_secret_key_here"
-# Environment="EFWS_LAT=-1.2654"
-# Environment="EFWS_LON=116.8312"
+# systemd membaca file .env LANGSUNG - satu-satunya sumber kebenaran,
+# sama seperti saat dijalankan manual lewat `python main.py`.
+# Tanda "-" di depan path berarti tidak gagal kalau file belum ada.
+EnvironmentFile=-/home/pi/efws/.env
 
 # ── Restart policy ────────────────────────────────────
 Restart=always
@@ -27,9 +27,12 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=efws
 
-# ── User (jalankan sebagai pi, bukan root) ────────────
-User=uwfadmin
-Group=uwfadmin
+# ── User (jalankan sebagai user biasa, BUKAN root) ────
+# Ganti "pi" sesuai username Raspberry Pi Anda. User ini WAJIB ada di
+# grup gpio, spi, i2c, dialout agar bisa akses GPIO/SPI/I2C/serial port
+# tanpa sudo (lihat docs/DEPLOYMENT.md langkah persiapan user).
+User=pi
+Group=pi
 
 [Install]
 WantedBy=multi-user.target

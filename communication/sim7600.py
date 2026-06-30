@@ -1,31 +1,56 @@
 """
-SIM7600E-H 4G HAT controller via AT commands.
+SIMCom A7670E / SIM7670E (LTE Cat-1 4G) controller via AT command - GPS/GNSS.
+
+CATATAN PENTING soal kompatibilitas AT command:
+  Modul A7670E/SIM7670E SECARA UMUM kompatibel dengan AT command set
+  SIM7600 untuk fungsi modem dasar (AT, AT+CSQ, AT+CREG?, AT+CGDCONT,
+  AT+CGPADDR), TAPI untuk GNSS/GPS perintahnya BERBEDA:
+
+    SIM7600E   : AT+CGPS=1 / AT+CGPS=0   (nyalakan/matikan GPS engine)
+    A7670E/SIM7670E : AT+CGNSSPWR=1 / AT+CGNSSPWR=0  (nyalakan/matikan GNSS)
+
+  Sedangkan AT+CGPSINFO untuk membaca hasil fix formatnya SAMA di kedua
+  keluarga modul ini, jadi parser NMEA di bawah tetap dipakai apa adanya.
+  (Referensi: SIMCom A76XX Series AT Command Manual & GNSS Application Note)
 
 Fitur:
   - Diagnostik modem (signal, registrasi jaringan, IP)
-  - GPS: ambil koordinat lat/lon real dari antena GPS bawaan SIM7600E
-    (frekuensi antena 1532.24 MHz L-Band)
+  - GPS: ambil koordinat lat/lon real dari antena GNSS modul
 
-AT command GPS flow:
-  AT+CGPS=1       → nyalakan GPS engine
-  AT+CGPSINFO     → baca NMEA fix (lat, lon, alt, kecepatan, arah, waktu)
-  AT+CGPS=0       → matikan GPS (opsional, hemat daya)
+Alur AT command GNSS:
+  AT+CGNSSPWR=1   -> nyalakan GNSS engine (tunggu "+CGNSSPWR: READY!")
+  AT+CGPSINFO     -> baca NMEA fix (lat, lon, alt, kecepatan, arah, waktu)
+  AT+CGNSSPWR=0   -> matikan GNSS (opsional, hemat daya)
 
 Requires: pip install pyserial
 """
 import re
 import time
 import logging
-import serial
+try:
+    import serial
+except ImportError:
+    serial = None
 from config import settings
 
 logger = logging.getLogger("efws.sim7600")
 
 
 class SIM7600:
-    def __init__(self, port=settings.SIM7600_AT_PORT, baudrate=settings.SIM7600_BAUDRATE):
-        self.ser = serial.Serial(port, baudrate, timeout=2)
-        self._gps_on = False
+    """
+    Nama class dipertahankan 'SIM7600' untuk kompatibilitas import di
+    main.py - tapi command internal sudah disesuaikan untuk A7670E/SIM7670E.
+    """
+
+    def __init__(self, port=None, baudrate=None):
+        if serial is None:
+            raise RuntimeError("pyserial tidak terinstall - pip install pyserial")
+        self.ser = serial.Serial(
+            port or settings.SIM7600_AT_PORT,
+            baudrate or settings.SIM7600_BAUDRATE,
+            timeout=2,
+        )
+        self._gnss_on = False
 
     # ─── AT command primitif ─────────────────────────────────────
     def send_at(self, command: str, wait: float = 1.0) -> str:
@@ -41,47 +66,51 @@ class SIM7600:
         return "OK" in self.send_at("AT")
 
     def signal_quality(self) -> str:
-        """AT+CSQ → +CSQ: <rssi>,<ber>. rssi 0–31 (makin tinggi makin kuat), 99=tidak diketahui."""
+        """AT+CSQ -> +CSQ: <rssi>,<ber>. rssi 0-31 (makin tinggi makin kuat), 99=tidak diketahui."""
         return self.send_at("AT+CSQ")
 
     def network_registration(self) -> str:
         return self.send_at("AT+CREG?")
 
-    def apn_setup(self, apn: str = settings.APN) -> str:
+    def apn_setup(self, apn: str = None) -> str:
+        apn = apn or settings.APN
         self.send_at(f'AT+CGDCONT=1,"IP","{apn}"')
         return self.send_at("AT+CGATT=1")
 
     def get_ip(self) -> str:
         return self.send_at("AT+CGPADDR=1")
 
-    # ─── GPS ─────────────────────────────────────────────────────
+    # ─── GNSS / GPS (A7670E/SIM7670E command set) ─────────────────
     def gps_power_on(self) -> bool:
-        """Nyalakan GPS engine SIM7600E. Perlu 30–60 detik untuk cold fix."""
-        resp = self.send_at("AT+CGPS=1", wait=1.5)
-        if "OK" in resp or "already" in resp.lower():
-            self._gps_on = True
-            logger.info("GPS engine ON. Tunggu fix (cold: ~60 detik, warm: ~15 detik).")
+        """
+        Nyalakan GNSS engine A7670E/SIM7670E. Perlu 15-60 detik untuk fix
+        pertama (cold start) di luar ruangan dengan antena GNSS terpasang.
+        """
+        resp = self.send_at("AT+CGNSSPWR=1", wait=2.0)
+        if "OK" in resp or "READY" in resp:
+            self._gnss_on = True
+            logger.info("GNSS engine ON. Tunggu fix (cold: ~15-60 detik).")
             return True
-        logger.warning("GPS power ON gagal: %s", resp.strip())
+        logger.warning("GNSS power ON gagal: %s", resp.strip())
         return False
 
     def gps_power_off(self) -> bool:
-        """Matikan GPS engine (hemat daya jika tidak dibutuhkan terus-menerus)."""
-        resp = self.send_at("AT+CGPS=0", wait=1.0)
-        self._gps_on = False
+        """Matikan GNSS engine (hemat daya jika tidak dibutuhkan terus-menerus)."""
+        resp = self.send_at("AT+CGNSSPWR=0", wait=1.0)
+        self._gnss_on = False
         return "OK" in resp
 
     def _parse_cgpsinfo(self, raw: str) -> dict | None:
         """
-        Parse respons AT+CGPSINFO.
+        Parse respons AT+CGPSINFO (format sama untuk SIM7600 & A7670E/SIM7670E).
 
-        Format NMEA dari SIM7600E:
+        Format NMEA:
           +CGPSINFO: <lat>,<N/S>,<lon>,<E/W>,<date>,<utc_time>,<alt>,<speed>,<course>
 
         Contoh ada fix:
           +CGPSINFO: 0114.5506,S,11649.5982,E,260625,033042.0,8.2,0.0,0.0
 
-        Contoh tidak ada fix:
+        Contoh belum ada fix:
           +CGPSINFO: ,,,,,,,,
         """
         match = re.search(r"\+CGPSINFO:\s*([^\r\n]+)", raw)
@@ -94,8 +123,7 @@ class SIM7600:
 
         try:
             def _nmea_to_dd(nmea: str, direction: str) -> float:
-                """Konversi NMEA ddmm.mmmm → decimal degrees."""
-                # Cari titik desimal, 2 digit sebelumnya adalah menit
+                """Konversi NMEA ddmm.mmmm -> decimal degrees."""
                 dot = nmea.index(".")
                 deg = float(nmea[:dot - 2])
                 minutes = float(nmea[dot - 2:])
@@ -112,9 +140,7 @@ class SIM7600:
             spd  = float(parts[7]) if parts[7] else None
             crs  = float(parts[8]) if parts[8] else None
 
-            # Format waktu UTC: HHMMSS.s → HH:MM:SS
             utc_fmt = f"{utc[:2]}:{utc[2:4]}:{utc[4:]}" if len(utc) >= 6 else utc
-            # Format tanggal: DDMMYY → DD/MM/20YY
             date_fmt = f"{date[:2]}/{date[2:4]}/20{date[4:]}" if len(date) == 6 else date
 
             return {
@@ -122,7 +148,7 @@ class SIM7600:
                 "lat":          lat,
                 "lon":          lon,
                 "altitude_m":   alt,
-                "speed_kmh":    round(spd * 1.852, 2) if spd is not None else None,  # knot→km/h
+                "speed_kmh":    round(spd * 1.852, 2) if spd is not None else None,  # knot->km/h
                 "course_deg":   crs,
                 "date_utc":     date_fmt,
                 "time_utc":     utc_fmt,
@@ -134,20 +160,19 @@ class SIM7600:
 
     def get_gps(self, timeout: int = 90, interval: float = 3.0) -> dict:
         """
-        Ambil koordinat GPS dari SIM7600E.
-
-        Jika GPS engine belum ON, akan dinyalakan otomatis.
-        Akan polling AT+CGPSINFO sampai ada fix atau timeout.
+        Ambil koordinat GPS dari A7670E/SIM7670E.
+        Jika GNSS engine belum ON, akan dinyalakan otomatis.
+        Polling AT+CGPSINFO sampai ada fix atau timeout.
 
         Return dict:
-          fix=True  → {"fix": True, "lat": float, "lon": float, ...}
-          fix=False → {"fix": False, "reason": str}
+          fix=True  -> {"fix": True, "lat": float, "lon": float, ...}
+          fix=False -> {"fix": False, "reason": str}
         """
-        if not self._gps_on:
+        if not self._gnss_on:
             if not self.gps_power_on():
-                return {"fix": False, "reason": "GPS engine gagal dinyalakan"}
+                return {"fix": False, "reason": "GNSS engine gagal dinyalakan"}
 
-        logger.info("Menunggu GPS fix (timeout %ds)...", timeout)
+        logger.info("Menunggu GNSS fix (timeout %ds)...", timeout)
         elapsed = 0.0
 
         while elapsed < timeout:
@@ -156,7 +181,7 @@ class SIM7600:
 
             if result:
                 logger.info(
-                    "✅ GPS fix! lat=%.6f, lon=%.6f, alt=%.1fm, spd=%.1fkm/h",
+                    "GNSS fix! lat=%.6f, lon=%.6f, alt=%.1fm, spd=%.1fkm/h",
                     result["lat"], result["lon"],
                     result.get("altitude_m") or 0,
                     result.get("speed_kmh") or 0,
@@ -165,40 +190,37 @@ class SIM7600:
 
             logger.debug("Belum ada fix (%.0fs/%.0fs)...", elapsed, timeout)
             time.sleep(interval)
-            elapsed += interval + 1.0   # +1 dari wait send_at
+            elapsed += interval + 1.0
 
         return {
             "fix":    False,
-            "reason": f"Timeout {timeout}s — pastikan antena GPS terpasang dan langit terbuka",
+            "reason": f"Timeout {timeout}s - pastikan antena GNSS terpasang dan langit terbuka",
         }
 
-    def get_gps_location(self) -> tuple[float, float] | None:
-        """
-        Shortcut: return (lat, lon) atau None jika tidak ada fix.
-        Cocok untuk dipakai di main.py saat startup.
-        """
+    def get_gps_location(self) -> "tuple[float, float] | None":
+        """Shortcut: return (lat, lon) atau None jika tidak ada fix."""
         result = self.get_gps()
         if result.get("fix"):
             return result["lat"], result["lon"]
         return None
 
     def close(self):
-        if self._gps_on:
+        if self._gnss_on:
             self.gps_power_off()
         self.ser.close()
 
 
 # ─── Mock GPS untuk mode testing ─────────────────────────────────
 class MockSIM7600:
-    """Dipakai saat RUN_MODE=mock — tidak butuh hardware SIM7600."""
-    _gps_on = False
+    """Dipakai saat RUN_MODE=mock - tidak butuh hardware A7670E/SIM7670E."""
+    _gnss_on = False
 
     def gps_power_on(self) -> bool:
-        self._gps_on = True
+        self._gnss_on = True
         return True
 
     def gps_power_off(self) -> bool:
-        self._gps_on = False
+        self._gnss_on = False
         return True
 
     def get_gps(self, timeout=90, interval=3.0) -> dict:
@@ -214,7 +236,7 @@ class MockSIM7600:
             "_mock":      True,
         }
 
-    def get_gps_location(self) -> tuple[float, float]:
+    def get_gps_location(self) -> tuple:
         return (-1.265400, 116.831200)
 
     def check_module(self) -> bool: return True
@@ -225,7 +247,7 @@ class MockSIM7600:
 
 
 if __name__ == "__main__":
-    # Test langsung: python sim7600.py
+    # Test langsung: python communication/sim7600.py
     import json
     modem = SIM7600()
     print("Module:", modem.check_module())

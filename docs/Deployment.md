@@ -1,243 +1,235 @@
-# EFWS — Panduan Deployment & Testing di Raspberry Pi
-> Versi refaktor: komunikasi via **HTTP REST API** (bukan MQTT/Telegram)
+# EFWS — Panduan Lengkap: Wiring → Testing → Prototyping API → Jalan di Background
+
+Panduan ini dari NOL sampai EFWS jalan stabil di background, memakai
+hardware aktual: Raspberry Pi 4, MCP3008 (ADC SPI), Logic Level Converter,
+MQ-2, MQ-135, Flame sensor 4-wire, BME280, Soil moisture probe, RS485
+Anemometer, A7670E/SIM7670E (4G+GNSS), Relay 5V + Sirine 12V 120dB.
+
+Struktur project ini **flat** — `main.py` ada langsung di root project
+(bukan di subfolder). `venv/`, `.env`, `scripts/`, `logs/`, `database/`
+semuanya sejajar dengan `main.py`.
 
 ---
 
-## 1. Persiapan awal (satu kali)
+## TAHAP 0 — Wiring fisik
 
-```bash
-# Di Raspberry Pi, buka terminal
-cd ~
-git clone https://github.com/kamu/efws.git   # atau transfer folder efws_refactored
+**WAJIB dibaca dulu**: `docs/Pinout.md` — berisi tabel wiring lengkap per
+komponen, termasuk catatan keselamatan logic level converter (sinyal 5V
+sensor analog HARUS lewat level converter sebelum masuk MCP3008/GPIO) dan
+catatan keselamatan jalur 12V sirine.
 
-# Buat virtual environment
-python3 -m venv efws/venv
-source efws/venv/bin/activate
-
-# Install dependensi minimal (untuk testing mock)
-pip install requests
-
-# Install semua dependensi (untuk hardware nyata)
-# pip install -r efws/efws/requirements.txt
-```
+Setelah semua kabel terpasang, **JANGAN langsung jalankan kode** — lanjut
+dulu ke persiapan OS & cek device terlebih dulu di Tahap 2.
 
 ---
 
-## 2. Testing mode MOCK (tanpa hardware apapun)
-
-Mode ini mensimulasi semua sensor dengan skenario otomatis (normal → warning → critical setiap 2 menit).
+## TAHAP 1 — Pindahkan project ke Raspberry Pi
 
 ```bash
-cd ~/efws/efws
-export EFWS_RUN_MODE=mock
-export EFWS_DEVICE_ID=efws-test-01
-
-# Opsional: ganti ke URL API kamu (atau pakai https://webhook.site untuk inspeksi)
-export EFWS_API_URL=https://webhook.site/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-
-# Jalankan langsung (foreground, Ctrl+C untuk berhenti)
-python main.py
-```
-
-**Yang akan terlihat di terminal:**
-```
-2025-01-01T10:00:00 [INFO] efws.main: EFWS initialised. Device: efws-test-01 | Mode: mock
-2025-01-01T10:00:00 [INFO] efws.main: EFWS loop started...
-2025-01-01T10:00:05 [INFO] efws.main: READ #1 | alarm=none     | mq2=80 ppm | ...
+scp -r efws pi@<ip-raspberry-pi>:/home/pi/efws
+ssh pi@<ip-raspberry-pi>
+cd /home/pi/efws
 ```
 
 ---
 
-## 3. Jalankan sebagai background service (tidak ganggu terminal)
-
-### Opsi A — systemd (REKOMENDASI, auto-start saat Pi booting)
+## TAHAP 2 — Persiapan OS (sekali saja)
 
 ```bash
-# Edit path & environment di file service
-nano ~/efws/efws.service
+sudo apt update && sudo apt install -y python3-venv python3-pip \
+    i2c-tools usb-modeswitch modemmanager network-manager git
 
-# Install service
-sudo cp ~/efws/efws.service /etc/systemd/system/efws.service
+sudo raspi-config
+# Interface Options -> I2C  -> Yes   (untuk BME280)
+# Interface Options -> SPI  -> Yes   (untuk MCP3008)
+# Interface Options -> Serial Port -> "login shell over serial" = No,
+#                                     "serial port hardware" = Yes
+#                                     (HANYA jika A7670E disambung via UART,
+#                                      kalau via USB langkah ini bisa dilewati)
+sudo reboot
+```
+
+Setelah reboot, cek device-device fisik sudah terdeteksi sebelum lanjut:
+```bash
+ls /dev/spidev*     # harus muncul /dev/spidev0.0 (MCP3008)
+i2cdetect -y 1       # harus muncul 0x76 (BME280)
+ls /dev/ttyUSB*      # harus muncul beberapa ttyUSBx (A7670E + anemometer)
+```
+Kalau salah satu di atas TIDAK muncul, berhenti dulu dan cek wiring/
+`raspi-config` sebelum lanjut — jangan paksa lanjut ke instalasi Python.
+
+Tambahkan user `pi` ke grup yang dibutuhkan supaya tidak perlu `sudo`
+tiap akses hardware:
+```bash
+sudo usermod -aG gpio,spi,i2c,dialout pi
+sudo reboot
+```
+
+---
+
+## TAHAP 3 — Setup Python environment
+
+```bash
+cd /home/pi/efws
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
+```
+
+---
+
+## TAHAP 4 — Setup `.env` (mode mock dulu, lalu webhook.site)
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Untuk **prototyping cepat ke API**, buka https://webhook.site di browser,
+copy "Your unique URL", lalu isi:
+```ini
+EFWS_RUN_MODE=mock
+EFWS_API_URL=https://webhook.site/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+EFWS_API_KEY=
+```
+Biarkan `EFWS_RUN_MODE=mock` dulu di tahap ini — kita test koneksi API
+TANPA hardware terlebih dulu, baru testing per-sensor satu-satu, baru
+pindah ke `hardware` di TAHAP 7.
+
+---
+
+## TAHAP 5 — Test koneksi API (webhook.site) duluan
+
+```bash
+source venv/bin/activate
+python3 tests/test_webhook_api.py
+```
+Buka halaman webhook.site Anda — 2 request POST JSON (data + alarm) harus
+muncul live di sana. Kalau ini sukses, jalur Pi → internet → API sudah
+terbukti bekerja, baru lanjut ke testing sensor satu-satu.
+
+> Belum ada koneksi internet/4G di Pi? Pakai `tools/mock_api_server.py`
+> dulu (jalankan di laptop yang satu jaringan dengan Pi, lalu set
+> `EFWS_API_URL=http://<ip-laptop>:5000/api/v1/efws` di `.env`) supaya bisa
+> lihat JSON yang terkirim secara langsung tanpa perlu internet sama sekali.
+
+---
+
+## TAHAP 6 — Test tiap sensor satu-satu (URUTAN INI PENTING)
+
+Jalankan **berurutan** — kalau satu gagal, selesaikan dulu sebelum lanjut
+ke yang berikutnya (sensor analog semuanya bergantung ke MCP3008, jadi
+kalau test #1 gagal, semua sensor analog setelahnya juga akan gagal).
+
+```bash
+# 1. MCP3008 dulu - fondasi semua sensor analog
+python3 tests/test_mcp3008.py
+
+# 2. MQ-2 & MQ-135 (analog, lewat MCP3008)
+python3 tests/test_gas_sensors.py
+
+# 3. Flame sensor (digital DO + analog AO opsional)
+python3 tests/test_flame.py
+
+# 4. BME280 (I2C, independen dari MCP3008)
+python3 tests/test_bme280.py
+
+# 5. Soil moisture probe (analog, lewat MCP3008) - termasuk kalibrasi
+python3 tests/test_soil.py
+
+# 6. RS485 Anemometer
+python3 tests/test_anemometer.py
+
+# 7. A7670E/SIM7670E - sinyal, SIM, GPS
+python3 tests/test_a7670e.py --gps-timeout 90
+
+# 8. Relay + Sirine (⚠️ SUARA KERAS 120dB, baca peringatan di scriptnya)
+python3 tests/test_relay_siren.py
+
+# 9. Semua sensor sekaligus, satu putaran baca (final check sebelum main.py)
+python3 tests/test_all_sensors.py
+```
+
+---
+
+## TAHAP 7 — Jalankan EFWS penuh di mode hardware (foreground dulu)
+
+```bash
+nano .env
+# Ubah: EFWS_RUN_MODE=hardware
+
+python3 main.py
+```
+Amati beberapa siklus baca (default tiap 5 detik) — pastikan semua nilai
+sensor masuk akal, lalu cek webhook.site untuk konfirmasi data benar-benar
+terkirim. Tekan `Ctrl+C` untuk berhenti setelah yakin semuanya jalan baik.
+
+---
+
+## TAHAP 8 — Jalankan di background (tanpa mengganggu terminal)
+
+Dua cara — pilih salah satu sesuai kebutuhan:
+
+### Cara A: `scripts/efws_ctl.sh` (cepat, untuk masih sering edit kode)
+
+```bash
+chmod +x scripts/efws_ctl.sh
+./scripts/efws_ctl.sh start      # jalankan
+./scripts/efws_ctl.sh status     # cek jalan/tidak + CPU/RAM
+./scripts/efws_ctl.sh logs       # tail log real-time (Ctrl+C cuma stop pantau, proses tetap jalan)
+./scripts/efws_ctl.sh restart    # WAJIB jalankan ini tiap kali update kode
+./scripts/efws_ctl.sh stop       # berhenti
+```
+
+### Cara B: systemd (disarankan untuk produksi — auto-start saat boot, auto-restart saat crash)
+
+```bash
+sudo cp efws.service /etc/systemd/system/efws.service
 sudo systemctl daemon-reload
-sudo systemctl enable efws          # auto-start saat boot
-sudo systemctl start efws           # mulai sekarang
+sudo systemctl enable efws      # auto-start saat boot
+sudo systemctl start efws       # jalankan sekarang
 
-# Cek status
-sudo systemctl status efws
-
-# Lihat log live (seperti tail -f tapi dari systemd)
-sudo journalctl -u efws -f
-
-# Lihat log 100 baris terakhir
-sudo journalctl -u efws -n 100
-
-# Hentikan / restart
-sudo systemctl stop efws
-sudo systemctl restart efws
+sudo systemctl status efws          # cek jalan/tidak
+sudo systemctl restart efws         # WAJIB jalankan ini tiap kali update kode
+sudo systemctl stop efws            # berhenti
+sudo journalctl -u efws -f          # log sistem real-time
+tail -f logs/efws.log               # log aplikasi (lebih detail)
 ```
 
-### Opsi B — nohup (simpel, cocok untuk testing cepat)
+`.env` dibaca otomatis lewat `EnvironmentFile=` di `efws.service` — jadi
+edit `.env` lalu `systemctl restart efws` cukup, tidak perlu sentuh file
+service lagi kecuali ganti path/user.
 
+---
+
+## TAHAP 9 — Pindah dari webhook.site ke API produksi
+
+Setelah prototyping selesai dan backend asli sudah siap:
 ```bash
-cd ~/efws/efws
-source ~/efws/venv/bin/activate
+nano .env
+# EFWS_API_URL=https://api-anda.com/api/v1/efws
+# EFWS_API_KEY=token_rahasia_anda   (jika backend pakai auth Bearer token)
 
-# Jalankan di background, log ke file
-nohup python main.py >> logs/efws.log 2>&1 &
-
-# Simpan PID
-echo $! > efws.pid
-
-# Cek apakah masih jalan
-ps aux | grep main.py
-
-# Lihat log live
-tail -f logs/efws.log
-
-# Hentikan
-kill $(cat efws.pid)
-```
-
-### Opsi C — screen (bisa di-attach kembali kapanpun)
-
-```bash
-# Install screen jika belum ada
-sudo apt-get install screen
-
-# Buat sesi baru
-screen -S efws
-
-# Dalam sesi screen, jalankan EFWS
-cd ~/efws/efws && source ~/efws/venv/bin/activate
-python main.py
-
-# Detach tanpa menghentikan: tekan Ctrl+A lalu D
-# Re-attach kapanpun: screen -r efws
+./scripts/efws_ctl.sh restart    # atau: sudo systemctl restart efws
 ```
 
 ---
 
-## 4. Verifikasi data tersimpan di database
+## Troubleshooting per komponen
 
-```bash
-cd ~/efws/efws
-
-# Buka SQLite
-sqlite3 database/efws_data.db
-
-# Query data sensor terbaru
-SELECT id, timestamp, alarm_level, mq2_ppm, mq135_ppm,
-       flame_detected, temperature_c, humidity_pct,
-       soil_moisture, wind_speed_ms
-FROM sensor_readings
-ORDER BY id DESC
-LIMIT 10;
-
-# Lihat alarm yang pernah terjadi
-SELECT * FROM alarm_events ORDER BY id DESC LIMIT 5;
-
-# Lihat API queue (pending / gagal kirim)
-SELECT id, endpoint, attempts, sent, last_error
-FROM api_queue WHERE sent=0;
-
-# Hitung total readings
-SELECT COUNT(*) as total, MIN(timestamp) as first, MAX(timestamp) as last
-FROM sensor_readings;
-
-# Keluar dari sqlite3
-.quit
-```
-
----
-
-## 5. Konfigurasi API endpoint
-
-Edit `config/settings.py` atau set environment variable:
-
-```bash
-# Untuk testing cepat (inspeksi request di browser)
-export EFWS_API_URL=https://webhook.site/your-unique-id
-
-# Untuk server sendiri
-export EFWS_API_URL=https://api.server-kamu.com/v1/efws
-export EFWS_API_KEY=bearer_token_opsional
-```
-
-Payload JSON yang dikirim ke `{API_URL}/data`:
-```json
-{
-  "device_id": "efws-001",
-  "location": {"lat": 0.0, "lon": 0.0},
-  "timestamp": "2025-01-01T10:00:00+00:00",
-  "mode": "mock",
-  "sensors": {
-    "mq2":   {"voltage": 0.48, "ppm": 80.0},
-    "mq135": {"voltage": 0.43, "ppm": 120.0},
-    "flame": {"raw": 1, "flame_detected": false},
-    "bme280":{"temperature_c": 30.1, "humidity_percent": 64.8, "pressure_hpa": 1013.0},
-    "soil":  {"raw": 18200, "moisture_percent": 55.0},
-    "wind":  {"speed_ms": 2.5}
-  },
-  "statuses": {
-    "mq2": "normal", "mq135": "normal", "flame": "normal",
-    "temperature": "normal", "humidity_low": "normal",
-    "soil_dry": "normal", "wind": "normal"
-  },
-  "alarm": {"active": false, "level": "none", "triggered_by": []}
-}
-```
-
----
-
-## 6. Switch ke mode hardware (setelah sensor terpasang)
-
-```bash
-# Edit settings atau set env
-export EFWS_RUN_MODE=hardware
-
-# Pastikan I2C aktif di Pi
-sudo raspi-config   # Interface Options → I2C → Enable
-
-# Cek perangkat I2C terdeteksi
-sudo i2cdetect -y 1
-# Harus muncul 0x48 (ADS1115) dan 0x76 atau 0x77 (BME280)
-
-# Cek port serial anemometer
-ls /dev/ttyUSB*
-
-# Restart service
-sudo systemctl restart efws
-```
-
----
-
-## 7. Rotasi log otomatis (agar log tidak penuh)
-
-```bash
-sudo nano /etc/logrotate.d/efws
-```
-Isi:
-```
-/home/pi/efws/efws/logs/efws.log {
-    daily
-    rotate 30
-    compress
-    missingok
-    notifempty
-    postrotate
-        systemctl restart efws
-    endscript
-}
-```
-
----
-
-## Ringkasan perintah harian
-
-| Aksi | Perintah |
-|------|----------|
-| Lihat log live | `sudo journalctl -u efws -f` |
-| Cek status | `sudo systemctl status efws` |
-| Restart | `sudo systemctl restart efws` |
-| Lihat DB (10 data terbaru) | `sqlite3 database/efws_data.db "SELECT id,timestamp,alarm_level,temperature_c FROM sensor_readings ORDER BY id DESC LIMIT 10;"` |
-| Hitung total data | `sqlite3 database/efws_data.db "SELECT COUNT(*) FROM sensor_readings;"` |
+| Komponen | Gejala | Kemungkinan penyebab |
+|----------|--------|------------------------|
+| MCP3008 | `test_mcp3008.py` gagal buka SPI | SPI belum aktif di raspi-config; `spidev` belum terinstall; wiring CLK/DOUT/DIN/CS salah |
+| MQ-2/MQ-135 | Nilai selalu mentok di angka sama (clipping) | Lupa pasang logic level converter di jalur analognya |
+| MQ-2/MQ-135 | Nilai ppm tidak masuk akal | Sensor belum preheat (butuh 24-48 jam untuk akurasi penuh) |
+| Flame sensor | `flame_detected` selalu True/False, tidak berubah | `active_low` salah arah, atau DO tidak lewat level converter dengan benar |
+| BME280 | `i2cdetect -y 1` tidak muncul 0x76 | I2C belum aktif; wiring SDA/SCL terbalik; alamat sebenarnya 0x77 (set `EFWS_BME280_ADDR=0x77`) |
+| Soil probe | moisture_percent selalu 0% atau 100% | Belum dikalibrasi (`dry_raw`/`wet_raw` di `sensors/soil.py`) |
+| Anemometer | Exception saat baca | Slave ID/register Modbus salah (cek datasheet unit Anda); wiring A/B terbalik |
+| A7670E | `AT` tidak merespons | Port salah (`ls /dev/ttyUSB*`), modul belum power-on, baudrate salah |
+| A7670E | GPS timeout terus | Antena GNSS belum terpasang/tidak ada langit terbuka; pastikan pakai `AT+CGNSSPWR` bukan `AT+CGPS` (sudah benar di kode ini) |
+| Relay/Sirine | Relay "klik" tapi sirine tidak bunyi | Sumber 12V belum tersambung; wiring COM/NO salah |
+| Relay/Sirine | Relay tidak "klik" sama sekali | `active_low` salah; GPIO pin di `.env` tidak sesuai wiring fisik |
+| API | `test_webhook_api.py` gagal kirim | Cek `ping 8.8.8.8` (internet jalan?); `EFWS_API_URL` masih placeholder |
+| systemd | `status` → `failed` | `journalctl -u efws -n 50 --no-pager` untuk detail; biasanya modul Python belum terinstall di venv, atau `.env` tidak ditemukan |
