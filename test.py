@@ -1,3 +1,45 @@
+import serial
+import time
+
+PORT = "/dev/ttyUSB2"
+BAUDRATE = 115200
+
+def send_at(ser, cmd, delay=1):
+    ser.write((cmd + "\r").encode())
+    time.sleep(delay)
+    response = ser.read_all().decode(errors="ignore")
+    return response.strip()
+
+def main():
+    ser = serial.Serial(PORT, BAUDRATE, timeout=3)
+
+    print(send_at(ser, "AT"))
+    print(send_at(ser, "ATI"))
+    print(send_at(ser, "AT+CPIN?"))
+    print(send_at(ser, "AT+CSQ"))
+
+    print("Mengaktifkan GPS...")
+    print(send_at(ser, "AT+CGNSSPWR=1", 2))
+
+    print("Menunggu GPS fix...")
+    time.sleep(10)
+
+    for i in range(10):
+        print(f"\nPercobaan GPS ke-{i+1}")
+        gps = send_at(ser, "AT+CGNSSINFO", 3)
+        print(gps)
+
+        if "," in gps and "+CGNSSINFO:" in gps:
+            print("GPS terbaca.")
+            break
+
+        time.sleep(5)
+
+    ser.close()
+
+if _name_ == "_main_":
+    main()
+
 # from gpiozero import Buzzer
 # from time import sleep
 
@@ -440,23 +482,26 @@
 # if __name__ == "__main__":
 #     main()
 
-import serial
-import time
 
-ser = serial.Serial("/dev/ttyUSB2", 115200, timeout=2)
 
-ser.write(b'AT\r')
-time.sleep(1)
-print(ser.read_all().decode())
+# # Testing SIM7600E-H module with AT commands and GPS functionality. The script includes tests for serial connection, SIM card detection, signal quality, GPS fix, and data connection. It provides detailed output and suggestions for troubleshooting if any test fails.
+# import serial
+# import time
 
-ser.write(b'AT+CGPS=1\r')
-time.sleep(1)
-print(ser.read_all().decode())
+# ser = serial.Serial("/dev/ttyUSB2", 115200, timeout=2)
 
-time.sleep(5)
+# ser.write(b'AT\r')
+# time.sleep(1)
+# print(ser.read_all().decode())
 
-ser.write(b'AT+CGPSINFO\r')
-time.sleep(1)
-print(ser.read_all().decode())
+# ser.write(b'AT+CGPS=1\r')
+# time.sleep(1)
+# print(ser.read_all().decode())
 
-ser.close()
+# time.sleep(5)
+
+# ser.write(b'AT+CGPSINFO\r')
+# time.sleep(1)
+# print(ser.read_all().decode())
+
+# ser.close()
