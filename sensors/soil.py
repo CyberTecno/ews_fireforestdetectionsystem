@@ -16,7 +16,7 @@ from sensors.mcp3008 import get_mcp3008
 
 
 class SoilMoistureSensor:
-    def __init__(self, channel=None, dry_raw=900, wet_raw=380):
+    def __init__(self, channel=None, dry_raw=770, wet_raw=440):
         self.channel = channel if channel is not None else settings.ADC_CHANNEL_SOIL
         self.adc = get_mcp3008()
         self.dry_raw = dry_raw
