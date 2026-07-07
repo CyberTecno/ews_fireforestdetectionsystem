@@ -1,7 +1,7 @@
 [Unit]
 Description=Early Fire Warning System (EFWS)
-After=network-online.target
-Wants=network-online.target
+After=network-online.target gsm-connect.service
+Requires=gsm-connect.service
 
 [Service]
 # ── Ganti path sesuai lokasi install di Raspberry Pi ──

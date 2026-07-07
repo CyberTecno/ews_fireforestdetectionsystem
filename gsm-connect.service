@@ -1,0 +1,12 @@
+[Unit]
+Description=EWS GSM Auto Connect
+After=NetworkManager.service ModemManager.service
+Requires=NetworkManager.service ModemManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/home/pi/efws/scripts/gsm_connect.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
