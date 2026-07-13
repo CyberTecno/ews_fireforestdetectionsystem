@@ -2,8 +2,9 @@
 
 Panduan ini dari NOL sampai EFWS jalan stabil di background, memakai
 hardware aktual: Raspberry Pi 4, MCP3008 (ADC SPI), Logic Level Converter,
-MQ-2, MQ-135, Flame sensor 4-wire, BME280, Soil moisture probe, RS485
-Anemometer, A7670E/SIM7670E (4G+GNSS), Relay 5V + Sirine 12V 120dB.
+MQ-2, MQ-135, BME280, 2x Soil moisture probe, Submersible pressure sensor
+(4-20mA), Modul sensor tegangan DC 0-25V (baterai), RS485 Anemometer,
+A7670E/SIM7600 (4G+GNSS, salah satu saja), Relay 5V + Sirine 12V 120dB.
 
 Struktur project ini **flat** — `main.py` ada langsung di root project
 (bukan di subfolder). `venv/`, `.env`, `scripts/`, `logs/`, `database/`
@@ -105,7 +106,7 @@ pindah ke `hardware` di TAHAP 7.
 source venv/bin/activate
 python3 tests/test_webhook_api.py
 ```
-Buka halaman webhook.site Anda — 2 request POST JSON (data + alarm) harus
+Buka halaman webhook.site Anda — satu request POST JSON telemetry harus
 muncul live di sana. Kalau ini sukses, jalur Pi → internet → API sudah
 terbukti bekerja, baru lanjut ke testing sensor satu-satu.
 
@@ -129,26 +130,32 @@ python3 tests/test_mcp3008.py
 # 2. MQ-2 & MQ-135 (analog, lewat MCP3008)
 python3 tests/test_gas_sensors.py
 
-# 3. Flame sensor (digital DO + analog AO opsional)
-python3 tests/test_flame.py
-
-# 4. BME280 (I2C, independen dari MCP3008)
+# 3. BME280 (I2C, independen dari MCP3008)
 python3 tests/test_bme280.py
 
-# 5. Soil moisture probe (analog, lewat MCP3008) - termasuk kalibrasi
+# 4. Soil moisture probe (analog, lewat MCP3008) - termasuk kalibrasi
 python3 tests/test_soil.py
 
-# 6. RS485 Anemometer
+# 5. Submersible pressure sensor (analog via burden resistor, lewat MCP3008)
+python3 tests/test_pressure.py
+
+# 6. Battery voltage sensor (analog, lewat MCP3008)
+python3 tests/test_battery.py
+
+# 7. RS485 Anemometer
 python3 tests/test_anemometer.py
 
-# 7. A7670E/SIM7670E - sinyal, SIM, GPS
+# 8. A7670E/SIM7600 - sinyal, SIM, GPS
 python3 tests/test_a7670e.py --gps-timeout 90
 
-# 8. Relay + Sirine (⚠️ SUARA KERAS 120dB, baca peringatan di scriptnya)
+# 9. Relay + Sirine (⚠️ SUARA KERAS 120dB, baca peringatan di scriptnya)
 python3 tests/test_relay_siren.py
 
-# 9. Semua sensor sekaligus, satu putaran baca (final check sebelum main.py)
+# 10. Semua sensor sekaligus, satu putaran baca (final check sebelum main.py)
 python3 tests/test_all_sensors.py
+
+# 11. Integritas antrian offline (simulasi sinyal terputus, cek data tidak berubah)
+python3 tests/test_offline_queue_integrity.py
 ```
 
 ---
@@ -223,9 +230,11 @@ nano .env
 | MCP3008 | `test_mcp3008.py` gagal buka SPI | SPI belum aktif di raspi-config; `spidev` belum terinstall; wiring CLK/DOUT/DIN/CS salah |
 | MQ-2/MQ-135 | Nilai selalu mentok di angka sama (clipping) | Lupa pasang logic level converter di jalur analognya |
 | MQ-2/MQ-135 | Nilai ppm tidak masuk akal | Sensor belum preheat (butuh 24-48 jam untuk akurasi penuh) |
-| Flame sensor | `flame_detected` selalu True/False, tidak berubah | `active_low` salah arah, atau DO tidak lewat level converter dengan benar |
 | BME280 | `i2cdetect -y 1` tidak muncul 0x76 | I2C belum aktif; wiring SDA/SCL terbalik; alamat sebenarnya 0x77 (set `EFWS_BME280_ADDR=0x77`) |
 | Soil probe | moisture_percent selalu 0% atau 100% | Belum dikalibrasi (`dry_raw`/`wet_raw` di `sensors/soil.py`) |
+| Pressure sensor | `current_ma` selalu ~0, `fault_open_loop=True` | Loop putus/belum tersambung, atau PSU 12-24V loop belum nyala — jalankan `python3 tests/test_pressure.py` untuk diagnosis |
+| Pressure sensor | `depth_m` tidak masuk akal | `EFWS_PRESSURE_RANGE_M` belum disesuaikan datasheet sensor Anda |
+| Battery sensor | `voltage`/`percent` tidak masuk akal | `BATTERY_SENSOR_MAX_V`/`BATTERY_MAX_V`/`BATTERY_MIN_V` belum disesuaikan spesifikasi baterai |
 | Anemometer | Exception saat baca | Slave ID/register Modbus salah (cek datasheet unit Anda); wiring A/B terbalik |
 | A7670E | `AT` tidak merespons | Port salah (`ls /dev/ttyUSB*`), modul belum power-on, baudrate salah |
 | A7670E | GPS timeout terus | Antena GNSS belum terpasang/tidak ada langit terbuka; pastikan pakai `AT+CGNSSPWR` bukan `AT+CGPS` (sudah benar di kode ini) |

@@ -1,0 +1,272 @@
+[
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:00.000Z",
+        "waterLevel": 3.459,
+        "waterLevelCurrentMa": 15.069,
+        "smokeLevel": 9.49,
+        "temp": 29.23,
+        "humidity": 61.95,
+        "soilMoisture": 61.23,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.33
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:05.000Z",
+        "waterLevel": 2.538,
+        "waterLevelCurrentMa": 12.122,
+        "smokeLevel": 9.34,
+        "temp": 29.17,
+        "humidity": 63.02,
+        "soilMoisture": 57.72,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.52
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:10.000Z",
+        "waterLevel": 2.913,
+        "waterLevelCurrentMa": 13.322,
+        "smokeLevel": 9.68,
+        "temp": 29.86,
+        "humidity": 61.13,
+        "soilMoisture": 61.48,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.36
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:15.000Z",
+        "waterLevel": 2.835,
+        "waterLevelCurrentMa": 13.072,
+        "smokeLevel": 9.98,
+        "temp": 29.02,
+        "humidity": 61.48,
+        "soilMoisture": 61.29,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.59
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:20.000Z",
+        "waterLevel": 3.605,
+        "waterLevelCurrentMa": 15.536,
+        "smokeLevel": 10.23,
+        "temp": 29.36,
+        "humidity": 63.2,
+        "soilMoisture": 61.29,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.53
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:25.000Z",
+        "waterLevel": 3.515,
+        "waterLevelCurrentMa": 15.248,
+        "smokeLevel": 9.55,
+        "temp": 29.18,
+        "humidity": 62.2,
+        "soilMoisture": 57.97,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.41
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:30.000Z",
+        "waterLevel": 3.838,
+        "waterLevelCurrentMa": 16.282,
+        "smokeLevel": 9.78,
+        "temp": 29.35,
+        "humidity": 61.9,
+        "soilMoisture": 60.78,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.54
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:35.000Z",
+        "waterLevel": 2.63,
+        "waterLevelCurrentMa": 12.416,
+        "smokeLevel": 9.77,
+        "temp": 29.1,
+        "humidity": 62.54,
+        "soilMoisture": 61.8,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.57
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:40.000Z",
+        "waterLevel": 1.169,
+        "waterLevelCurrentMa": 7.741,
+        "smokeLevel": 70.6,
+        "temp": 46.49,
+        "humidity": 27.21,
+        "soilMoisture": 21.05,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 9.64
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:45.000Z",
+        "waterLevel": 1.012,
+        "waterLevelCurrentMa": 7.238,
+        "smokeLevel": 68.47,
+        "temp": 47.29,
+        "humidity": 27.82,
+        "soilMoisture": 21.82,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 8.63
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:50.000Z",
+        "waterLevel": 1.087,
+        "waterLevelCurrentMa": 7.478,
+        "smokeLevel": 66.41,
+        "temp": 47.16,
+        "humidity": 28.67,
+        "soilMoisture": 21.06,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 9.01
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:55.000Z",
+        "waterLevel": 1.202,
+        "waterLevelCurrentMa": 7.846,
+        "smokeLevel": 62.63,
+        "temp": 46.27,
+        "humidity": 28.21,
+        "soilMoisture": 21.66,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 8.83
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:01:00.000Z",
+        "waterLevel": 0.207,
+        "waterLevelCurrentMa": 4.662,
+        "smokeLevel": 100.0,
+        "temp": 63.17,
+        "humidity": 11.24,
+        "soilMoisture": 8.95,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 17.1
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:01:05.000Z",
+        "waterLevel": 0.25,
+        "waterLevelCurrentMa": 4.8,
+        "smokeLevel": 100.0,
+        "temp": 61.04,
+        "humidity": 10.96,
+        "soilMoisture": 9.23,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 16.36
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:01:10.000Z",
+        "waterLevel": 0.362,
+        "waterLevelCurrentMa": 5.158,
+        "smokeLevel": 100.0,
+        "temp": 63.02,
+        "humidity": 11.24,
+        "soilMoisture": 9.01,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 16.06
+      }
+    ]
+  }
+]

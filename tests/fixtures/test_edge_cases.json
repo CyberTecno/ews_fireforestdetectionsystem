@@ -1,0 +1,97 @@
+[
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:00.000Z",
+        "waterLevel": 3.714,
+        "waterLevelCurrentMa": 15.885,
+        "smokeLevel": 58.0,
+        "temp": 29.5,
+        "humidity": 63.0,
+        "soilMoisture": 60.0,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.5,
+        "_edgeCase": "smoke=59.9% — just below WARNING threshold"
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:00.000Z",
+        "waterLevel": 1.003,
+        "waterLevelCurrentMa": 7.21,
+        "smokeLevel": 60.0,
+        "temp": 29.5,
+        "humidity": 63.0,
+        "soilMoisture": 60.0,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.5,
+        "_edgeCase": "smoke=60.0% — exactly at WARNING threshold"
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:00.000Z",
+        "waterLevel": 0.401,
+        "waterLevelCurrentMa": 5.283,
+        "smokeLevel": 70.0,
+        "temp": 29.5,
+        "humidity": 63.0,
+        "soilMoisture": 60.0,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.5,
+        "_edgeCase": "smoke=70.0% — exactly at CRITICAL threshold"
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:00.000Z",
+        "waterLevel": 0.375,
+        "waterLevelCurrentMa": 5.2,
+        "smokeLevel": 9.8,
+        "temp": 29.5,
+        "humidity": 63.0,
+        "soilMoisture": 60.0,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 2.5,
+        "_edgeCase": "flame only — instant CRITICAL, smoke normal"
+      }
+    ]
+  },
+  {
+    "deviceId": "efws-001",
+    "deviceToken": "test",
+    "telemetry": [
+      {
+        "timestamp": "2025-06-30T07:00:00.000Z",
+        "waterLevel": 0.285,
+        "waterLevelCurrentMa": 4.912,
+        "smokeLevel": 9.8,
+        "temp": 29.5,
+        "humidity": 63.0,
+        "soilMoisture": 60.0,
+        "batteryLevel": 85.0,
+        "flameDetected": false,
+        "windSpeed": 15.1,
+        "_edgeCase": "wind only 15.1m/s — CRITICAL, smoke normal"
+      }
+    ]
+  }
+]

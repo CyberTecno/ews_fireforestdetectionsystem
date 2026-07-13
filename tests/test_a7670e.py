@@ -156,7 +156,7 @@ def test_gps(ser, timeout=90):
     print("  Pastikan antena GNSS terpasang dan ada langit terbuka.")
     print("  Cold start bisa butuh 15-60 detik.\n")
 
-    # A7670E/SIM7670E: AT+CGNSSPWR=1 (BUKAN AT+CGPS=1 seperti SIM7600)
+    # A7670E/SIM7670E pakai AT+CGNSSPWR=1 (modul SIM7600 lama pakai AT+CGPS=1 — berbeda!)
     resp = send_at(ser, "AT+CGNSSPWR=1", wait=2)
     if "OK" in resp or "READY" in resp:
         result(OK, "GNSS engine ON")

@@ -53,41 +53,54 @@ class MockMQ135(_MockBase):
         return {"voltage": v, "ppm": max(0.0, ppm), "_mock": True, "_scenario": sc}
 
 
-# ─── Flame sensor ────────────────────────────────────────────────
-class MockFlameSensor(_MockBase):
-    def read(self) -> dict:
-        sc       = self._scenario()
-        detected = (sc == "critical")
-        raw      = 0 if detected else 1   # active-LOW logic
-        return {"raw": raw, "flame_detected": detected, "_mock": True, "_scenario": sc}
-
-
-# ─── BME280 (temp / humidity / pressure) ─────────────────────────
+# ─── BME280 (temp / humidity / pressure ambient) ─────────────────
 class MockBME280(_MockBase):
     TEMP_BASE = {"normal": 30.0, "warning": 47.0, "critical": 62.0}
     HUM_BASE  = {"normal": 65.0, "warning": 28.0, "critical": 12.0}
 
     def read(self) -> dict:
         sc = self._scenario()
-        # Tambah variasi sinusoidal kecil agar grafik lebih natural
-        phase = math.sin(time.time() / 30) * 2
+        phase = math.sin(time.time() / 30) * 2   # variasi sinusoidal kecil
         return {
-            "temperature_c":   round(_jitter(self.TEMP_BASE[sc]) + phase, 2),
+            "temperature_c":    round(_jitter(self.TEMP_BASE[sc]) + phase, 2),
             "humidity_percent": round(max(0, _jitter(self.HUM_BASE[sc]) - phase), 2),
-            "pressure_hpa":    round(_jitter(1013.0, 0.002), 2),
+            "pressure_hpa":     round(_jitter(1013.0, 0.002), 2),
+            "_mock": True, "_scenario": sc,
+        }
+
+
+# ─── Submersible Pressure Sensor (water level, loop 4-20mA) ──────
+class MockPressureWater(_MockBase):
+    MA_BASE = {"normal": 14.0, "warning": 7.0, "critical": 4.5}  # makin rendah = makin dangkal/kosong
+    RANGE_M = 5.0
+
+    def read(self) -> dict:
+        sc   = self._scenario()
+        ma   = max(4.0, min(20.0, _jitter(self.MA_BASE[sc], 0.05)))
+        pct  = max(0.0, min(1.0, (ma - 4.0) / 16.0))
+        depth = round(pct * self.RANGE_M, 3)
+        return {
+            "current_ma":     round(ma, 3),
+            "depth_m":        depth,
+            "pressure_bar":   round(depth * 0.0980665, 4),
+            "fault_open_loop": False,
             "_mock": True, "_scenario": sc,
         }
 
 
 # ─── Soil moisture ───────────────────────────────────────────────
 class MockSoilMoisture(_MockBase):
-    MOIST_BASE = {"normal": 55.0, "warning": 18.0, "critical": 8.0}
+    SURFACE_BASE = {"normal": 55.0, "warning": 18.0, "critical":  8.0}
+    DEEP_BASE    = {"normal": 65.0, "warning": 25.0, "critical": 12.0}
 
     def read(self) -> dict:
-        sc  = self._scenario()
-        pct = max(0.0, _jitter(self.MOIST_BASE[sc], 0.06))
-        raw = int(26000 - pct / 100 * 14000)
-        return {"raw": raw, "moisture_percent": round(pct, 2), "_mock": True, "_scenario": sc}
+        sc          = self._scenario()
+        surface_pct = max(0.0, _jitter(self.SURFACE_BASE[sc], 0.06))
+        deep_pct    = max(0.0, _jitter(self.DEEP_BASE[sc],    0.06))
+        return {
+            "surface": {"raw": int(900 - surface_pct / 100 * 520), "moisture_percent": round(surface_pct, 2), "_mock": True},
+            "deep":    {"raw": int(900 - deep_pct    / 100 * 520), "moisture_percent": round(deep_pct,    2), "_mock": True},
+        }
 
 
 # ─── Anemometer ──────────────────────────────────────────────────
@@ -98,6 +111,17 @@ class MockAnemometer(_MockBase):
         sc    = self._scenario()
         speed = max(0.0, _jitter(self.SPEED_BASE[sc], 0.12))
         return {"speed_ms": round(speed, 2), "_mock": True, "_scenario": sc}
+
+
+# ─── Battery — Modul Sensor Tegangan DC 0-25V ────────────────────
+class MockBattery(_MockBase):
+    PCT_BASE = {"normal": 85.0, "warning": 42.0, "critical": 15.0}
+
+    def read(self) -> dict:
+        sc  = self._scenario()
+        pct = max(0.0, min(100.0, _jitter(self.PCT_BASE[sc], 0.04)))
+        v   = round(9.0 + pct / 100 * 3.6, 2)
+        return {"voltage": v, "percent": round(pct, 1), "_mock": True, "_scenario": sc}
 
 
 # ─── Mock Alarm (no GPIO) ────────────────────────────────────────
@@ -116,3 +140,4 @@ class MockAlarmController:
 
     def silence(self):
         self.set_level("none")
+
