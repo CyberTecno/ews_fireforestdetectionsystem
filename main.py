@@ -7,6 +7,7 @@ import logging
 import traceback
 from pathlib import Path
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from config import settings
 from database.db_manager import DBManager
@@ -253,11 +254,14 @@ class EFWS:
         soil_values = [v for v in (surface, deep) if v is not None]
         soil_avg    = round(sum(soil_values) / len(soil_values), 2) if soil_values else None
 
+        timestamp = (datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
+
+
         return {
             "deviceId":    settings.DEVICE_ID,
             "deviceToken": settings.DEVICE_TOKEN,
             "telemetry": [{
-                "timestamp":            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                "timestamp":            timestamp,
                 "waterLevel":           pressure.get("depth_m"),
                 "waterLevelCurrentMa":  pressure.get("current_ma"),
                 "smokeLevel":           smoke_pct,

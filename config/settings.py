@@ -161,7 +161,7 @@ DB_PATH = _opt("EFWS_DB_PATH", str(_ROOT / "database" / "efws_data.db"))
 LOG_PATH = _opt("EFWS_LOG_PATH", str(_ROOT / "logs" / "efws.log"))
 
 # ─── Timing ──────────────────────────────────────────────────────────────────
-SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 5)
+SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 1800)  # default 30 menit
 EFWS_CONNECTIVITY_CHECK_SEC = _int("EFWS_CONNECTIVITY_CHECK_SEC", 120)  # cek sinyal ulang tiap 2 menit saat offline
 
 # ─── Threshold file ──────────────────────────────────────────────────────────
