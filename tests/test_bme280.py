@@ -1,139 +1,39 @@
 """
-TEST 4 — BME280 (Temperature / Humidity / Pressure)
+TEST — BME280 (suhu / kelembaban / tekanan ambient, I2C)
 
-Continuous Monitoring
-Ctrl+C untuk keluar
+Cek dulu sebelum run:
+  sudo raspi-config → Interface Options → I2C → Yes
+  i2cdetect -y 1     → harus muncul 0x76 (atau 0x77 kalau alamat berbeda)
 
-Usage:
-    python3 tests/test_bme280.py
+Usage: python3 tests/test_bme280.py
 """
-
-import os
-import sys
-import time
-from datetime import datetime
-
+import sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-print("=" * 70)
-print("              TEST BME280 (I2C)")
-print("=" * 70)
-print("Pastikan I2C aktif:")
-print("  sudo raspi-config -> Interface -> I2C -> Yes")
-print()
-print("Cek alamat sensor:")
-print("  i2cdetect -y 1")
-print("Harus muncul 0x76 atau 0x77")
-print()
+from sensors.bme280 import BME280Sensor
+
+print("=" * 60)
+print("  TEST — BME280 (I2C)")
+print("=" * 60)
 
 try:
-    from sensors.bme280 import BME280Sensor
-
     sensor = BME280Sensor()
-
 except Exception as e:
-
-    print(f"[ERROR] Gagal inisialisasi BME280")
-    print(e)
-
-    print("\nKemungkinan penyebab:")
-    print("- I2C belum aktif")
-    print("- Wiring SDA/SCL salah")
-    print("- Alamat I2C salah")
-    print("- Sensor rusak")
-
+    print(f"❌ Gagal inisialisasi: {e}")
+    print("Cek: i2cdetect -y 1 harus menunjukkan alamat BME280 (0x76/0x77)")
     sys.exit(1)
 
-
-def check_temperature(t):
-    if t is None:
-        return "ERROR"
-
-    if t < -40 or t > 85:
-        return "ERROR"
-
-    if t < 0 or t > 60:
-        return "WARNING"
-
-    return "OK"
-
-
-def check_humidity(h):
-    if h is None:
-        return "ERROR"
-
-    if h < 0 or h > 100:
-        return "ERROR"
-
-    return "OK"
-
-
-def check_pressure(p):
-    if p is None:
-        return "ERROR"
-
-    if p < 300 or p > 1100:
-        return "WARNING"
-
-    return "OK"
-
-
-print("Monitoring dimulai...")
-print("Tekan Ctrl+C untuk berhenti.")
-
+print("Membaca 5x, tiap 2 detik (Ctrl+C untuk stop lebih awal)...\n")
 try:
-
-    while True:
-
-        os.system("clear")
-
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        data = sensor.read()
-
-        temp = data["temperature_c"]
-        hum = data["humidity_percent"]
-        pres = data["pressure_hpa"]
-
-        print("=" * 70)
-        print("LIVE BME280 MONITOR")
-        print("=" * 70)
-
-        print(f"Waktu : {now}")
-        print()
-
-        print(f"Temperature : {temp:.2f} °C")
-        print(f"Humidity    : {hum:.2f} %")
-        print(f"Pressure    : {pres:.2f} hPa")
-
-        print()
-
-        print("Status")
-
-        print(f"Temperature : {check_temperature(temp)}")
-        print(f"Humidity    : {check_humidity(hum)}")
-        print(f"Pressure    : {check_pressure(pres)}")
-
-        print()
-
-        if (
-            check_temperature(temp) == "OK"
-            and check_humidity(hum) == "OK"
-            and check_pressure(pres) == "OK"
-        ):
-            print("✓ Sensor bekerja normal")
-
+    for i in range(5):
+        reading = sensor.read()
+        if reading.get("error"):
+            print(f"  [{i+1}] ❌ error: {reading['error']}")
         else:
-            print("⚠ Periksa sensor atau wiring")
-
-        print()
-        print("Ctrl+C untuk keluar")
-
+            print(f"  [{i+1}] temp={reading['temperature_c']}°C  "
+                  f"hum={reading['humidity_percent']}%  "
+                  f"pressure={reading['pressure_hpa']}hPa")
         time.sleep(2)
-
+    print("\n✅ BME280 terbaca dengan baik.")
 except KeyboardInterrupt:
-
-    print("\n")
-    print("=" * 70)
-    print("Monitoring dihentikan.")
-    print("=" * 70)
+    print("\nDihentikan oleh user.")
