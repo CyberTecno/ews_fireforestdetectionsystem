@@ -224,54 +224,43 @@ class EFWS:
     # ─── Payload builder ─────────────────────────────────────────
     def _build_payload(self, data, statuses, level, triggered, smoke_pct) -> dict:
         """
-        Bentuk body PERSIS sesuai kontrak backend:
-          EFWS_API_URL/sensors/telemetry
-          { deviceId, deviceToken, telemetry: [{ timestamp, waterLevel,
-            waterLevelCurrentMa, smokeLevel, temp, humidity, soilMoisture,
-            batteryLevel, flameDetected, windSpeed }] }
-
-        Catatan desain:
-          - waterLevel/waterLevelCurrentMa: dari submersible pressure sensor
-            (depth_m + arus loop mA — mA berguna buat backend deteksi loop
-            putus tanpa harus device sendiri yang mutusin threshold).
-          - soilMoisture: rata-rata probe surface+deep (device punya 2 probe,
-            backend cuma butuh satu angka ringkas).
-          - flameDetected: SELALU false — flame sensor sudah tidak ada di
-            hardware. Field dipertahankan cuma buat kompatibilitas skema.
-          - Tidak ada _alarmLevel/_triggeredBy/threshold apa pun di payload —
-            evaluasi alarm & threshold sekarang murni tanggung jawab backend.
-            `statuses`/`level`/`triggered` di sini cuma dipakai device secara
-            LOKAL untuk menyalakan sirine (lihat _handle_alarm), tidak dikirim.
+        Build telemetry payload sesuai kontrak backend terbaru.
         """
-        soil     = data.get("soil", {})
-        bme      = data.get("bme280", {})
-        wind     = data.get("wind", {})
+
+        soil = data.get("soil", {})
+        bme = data.get("bme280", {})
+        wind = data.get("wind", {})
         pressure = data.get("pressure", {})
-        battery  = data.get("battery", {})
+        battery = data.get("battery", {})
 
         surface = soil.get("surface", {}).get("moisture_percent")
-        deep    = soil.get("deep",    {}).get("moisture_percent")
-        soil_values = [v for v in (surface, deep) if v is not None]
-        soil_avg    = round(sum(soil_values) / len(soil_values), 2) if soil_values else None
+        deep = soil.get("deep", {}).get("moisture_percent")
 
-        timestamp = (datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z")
-
+        timestamp = (
+            datetime.now(ZoneInfo("Asia/Jakarta"))
+            .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+            + "Z"
+        )
 
         return {
-            "deviceId":    settings.DEVICE_ID,
+            "deviceId": settings.DEVICE_ID,
             "deviceToken": settings.DEVICE_TOKEN,
-            "telemetry": [{
-                "timestamp":            timestamp,
-                "waterLevel":           pressure.get("depth_m"),
-                "waterLevelCurrentMa":  pressure.get("current_ma"),
-                "smokeLevel":           smoke_pct,
-                "temp":                 bme.get("temperature_c"),
-                "humidity":             bme.get("humidity_percent"),
-                "soilMoisture":         soil_avg,
-                "batteryLevel":         battery.get("percent"),
-                "flameDetected":        False,
-                "windSpeed":            wind.get("speed_ms"),
-            }],
+            "telemetry": [
+                {
+                    "timestamp": timestamp,
+                    "waterLevel": pressure.get("depth_m"),
+                    "smokeLevel": smoke_pct,
+                    "temp": bme.get("temperature_c"),
+                    "humidity": bme.get("humidity_percent"),
+                    "soilMoisture": {
+                        "surface": surface,
+                        "deep": deep,
+                    },
+                    "windSpeed": wind.get("speed_ms"),
+                    "batteryLevel": battery.get("percent"),
+                    "flameDetected": False,
+                }
+            ],
         }
 
     # ─── Alarm handler (LOKAL saja — tidak disimpan ke DB) ────────
