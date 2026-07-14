@@ -1,187 +1,141 @@
 #!/bin/bash
 
-set -e
-
-CONNECTION_NAME="EWS-4G"
-MODEM_METRIC=50
+APN="CMNET"
+IFACE="wwan0"
+ROUTE_METRIC=50
 WIFI_METRIC=600
-DEFAULT_APN="internet"
 
-echo "======================================"
-echo " EWS Network Setup - 4G Main + WiFi Backup"
-echo " Tanpa install package"
-echo "======================================"
+echo "[EWS-GSM] Starting Telkomsel IoT auto connect..."
+echo "[EWS-GSM] APN: $APN"
 
-if [ "$EUID" -ne 0 ]; then
-  echo "[ERROR] Jalankan dengan sudo:"
-  echo "sudo bash ~/ews_network_setup.sh"
+systemctl start ModemManager || true
+systemctl start NetworkManager || true
+
+# Matikan auto-connect NetworkManager untuk profile lama agar tidak bentrok
+nmcli connection modify "EWS-4G" connection.autoconnect no 2>/dev/null || true
+
+# Set WiFi sebagai backup metric besar
+WIFI_CONNECTIONS=$(nmcli -t -f NAME,TYPE connection show | grep ":802-11-wireless" | cut -d: -f1 || true)
+echo "$WIFI_CONNECTIONS" | while read -r WIFI_NAME; do
+  if [ -n "$WIFI_NAME" ]; then
+    echo "[EWS-GSM] Set WiFi backup: $WIFI_NAME"
+    nmcli connection modify "$WIFI_NAME" \
+      connection.autoconnect yes \
+      connection.autoconnect-priority 0 \
+      ipv4.route-metric "$WIFI_METRIC" \
+      ipv6.route-metric "$WIFI_METRIC" || true
+  fi
+done
+
+# Cari modem
+MODEM_ID=""
+for i in {1..30}; do
+  MODEM_ID=$(mmcli -L 2>/dev/null | grep -oP 'Modem/\K[0-9]+' | head -n 1 || true)
+  if [ -n "$MODEM_ID" ]; then
+    echo "[EWS-GSM] Modem found: $MODEM_ID"
+    break
+  fi
+  echo "[EWS-GSM] Waiting for modem... $i"
+  sleep 2
+done
+
+if [ -z "$MODEM_ID" ]; then
+  echo "[EWS-GSM] ERROR: Modem not found"
   exit 1
 fi
 
-echo "[1/7] Cek service ModemManager dan NetworkManager..."
+# Enable modem dan paksa LTE
+mmcli -m "$MODEM_ID" --enable || true
+sleep 5
+mmcli -m "$MODEM_ID" --set-allowed-modes='4g' || true
+sleep 5
 
-if ! systemctl is-active --quiet ModemManager; then
-  echo "[WARN] ModemManager belum aktif. Mengaktifkan..."
-  systemctl enable --now ModemManager
-fi
+echo "[EWS-GSM] Modem status:"
+mmcli -m "$MODEM_ID" | grep -E "state|access tech|operator|registration|packet|rejection|apn|signal" || true
 
-if ! systemctl is-active --quiet NetworkManager; then
-  echo "[WARN] NetworkManager belum aktif. Mengaktifkan..."
-  systemctl enable --now NetworkManager
-fi
-
-echo "[OK] Service aktif."
-
+# Bersihkan koneksi lama
+echo "[EWS-GSM] Disconnect previous bearer if any..."
+mmcli -m "$MODEM_ID" --simple-disconnect || true
+ip link set "$IFACE" down 2>/dev/null || true
+ip addr flush dev "$IFACE" 2>/dev/null || true
 sleep 3
 
-echo "[2/7] Deteksi modem..."
+# Connect modem pakai APN CMNET
+echo "[EWS-GSM] Connecting with APN $APN..."
+CONNECT_OUTPUT=$(mmcli -m "$MODEM_ID" --simple-connect="apn=$APN,ip-type=ipv4" 2>&1)
+CONNECT_STATUS=$?
 
-MODEM_ID=$(mmcli -L 2>/dev/null | grep -oP 'Modem/\K[0-9]+' | head -n 1 || true)
+echo "$CONNECT_OUTPUT"
 
-if [ -z "$MODEM_ID" ]; then
-  echo "[WARN] Modem belum terdeteksi oleh ModemManager."
-  echo "[WARN] Script tetap lanjut membuat profile 4G."
-  echo "[WARN] Kalau nanti modem dipasang, NetworkManager akan coba auto-connect."
-  OPERATOR_CODE=""
-else
-  echo "[OK] Modem ditemukan: Modem/$MODEM_ID"
-
-  echo "[INFO] Enable modem..."
-  mmcli -m "$MODEM_ID" --enable || true
-
-  sleep 3
-
-  OPERATOR_CODE=$(mmcli -m "$MODEM_ID" --output-keyvalue 2>/dev/null | grep "modem.3gpp.operator-code" | cut -d: -f2 | tr -d ' ' || true)
-
-  echo "[INFO] Operator code: ${OPERATOR_CODE:-unknown}"
+if [ "$CONNECT_STATUS" -ne 0 ]; then
+  echo "[EWS-GSM] ERROR: simple-connect failed"
+  exit 1
 fi
 
-echo "[3/7] Tentukan APN berdasarkan provider..."
+# Ambil bearer path dari output
+BEARER_PATH=$(echo "$CONNECT_OUTPUT" | grep -o '/org/freedesktop/ModemManager1/Bearer/[0-9]*' | head -n 1)
+BEARER_ID=$(basename "$BEARER_PATH")
 
-case "$OPERATOR_CODE" in
-  "51010")
-    PROVIDER="Telkomsel / by.U"
-    APN="internet"
-    ;;
-  "51011")
-    PROVIDER="XL / AXIS"
-    APN="internet"
-    ;;
-  "51001")
-    PROVIDER="Indosat"
-    APN="internet"
-    ;;
-  "51021")
-    PROVIDER="Indosat / IM3"
-    APN="internet"
-    ;;
-  "51089")
-    PROVIDER="Tri"
-    APN="3data"
-    ;;
-  *)
-    PROVIDER="Unknown / Default"
-    APN="$DEFAULT_APN"
-    ;;
-esac
-
-echo "[INFO] Provider : $PROVIDER"
-echo "[INFO] APN      : $APN"
-
-echo "[4/7] Buat atau update koneksi 4G..."
-
-if nmcli connection show "$CONNECTION_NAME" >/dev/null 2>&1; then
-  echo "[INFO] Profile $CONNECTION_NAME sudah ada. Update setting..."
-else
-  echo "[INFO] Membuat profile $CONNECTION_NAME..."
-  nmcli connection add type gsm ifname "*" con-name "$CONNECTION_NAME" apn "$APN"
+if [ -z "$BEARER_ID" ]; then
+  echo "[EWS-GSM] ERROR: Bearer ID not found"
+  exit 1
 fi
 
-nmcli connection modify "$CONNECTION_NAME" \
-  gsm.apn "$APN" \
-  connection.autoconnect yes \
-  connection.autoconnect-priority 100 \
-  ipv4.method auto \
-  ipv4.route-metric "$MODEM_METRIC" \
-  ipv6.method ignore
+echo "[EWS-GSM] Bearer ID: $BEARER_ID"
 
-echo "[5/7] Set semua koneksi WiFi sebagai backup..."
+# Ambil IP config dari bearer
+BEARER_INFO=$(mmcli -b "$BEARER_ID")
 
-WIFI_CONNECTIONS=$(nmcli -t -f NAME,TYPE connection show | grep ":802-11-wireless" | cut -d: -f1 || true)
+echo "$BEARER_INFO"
 
-if [ -z "$WIFI_CONNECTIONS" ]; then
-  echo "[WARN] Tidak ada profile WiFi ditemukan."
-else
-  echo "$WIFI_CONNECTIONS" | while read -r WIFI_NAME; do
-    if [ -n "$WIFI_NAME" ]; then
-      echo "[INFO] Set WiFi backup: $WIFI_NAME"
-      nmcli connection modify "$WIFI_NAME" \
-        connection.autoconnect yes \
-        connection.autoconnect-priority 0 \
-        ipv4.route-metric "$WIFI_METRIC" \
-        ipv6.route-metric "$WIFI_METRIC" || true
-    fi
+ADDRESS=$(echo "$BEARER_INFO" | awk -F': ' '/address/ {gsub(/ /,"",$2); print $2; exit}')
+PREFIX=$(echo "$BEARER_INFO" | awk -F': ' '/prefix/ {gsub(/ /,"",$2); print $2; exit}')
+GATEWAY=$(echo "$BEARER_INFO" | awk -F': ' '/gateway/ {gsub(/ /,"",$2); print $2; exit}')
+DNS_RAW=$(echo "$BEARER_INFO" | awk -F': ' '/dns/ {print $2; exit}')
+MTU=$(echo "$BEARER_INFO" | awk -F': ' '/mtu/ {gsub(/ /,"",$2); print $2; exit}')
+
+if [ -z "$ADDRESS" ] || [ -z "$PREFIX" ] || [ -z "$GATEWAY" ]; then
+  echo "[EWS-GSM] ERROR: Failed to read IP config from bearer"
+  exit 1
+fi
+
+echo "[EWS-GSM] Address: $ADDRESS/$PREFIX"
+echo "[EWS-GSM] Gateway: $GATEWAY"
+echo "[EWS-GSM] DNS: $DNS_RAW"
+echo "[EWS-GSM] MTU: $MTU"
+
+# Set IP ke wwan0
+ip link set "$IFACE" up
+ip addr flush dev "$IFACE"
+ip addr add "$ADDRESS/$PREFIX" dev "$IFACE"
+
+if [ -n "$MTU" ]; then
+  ip link set dev "$IFACE" mtu "$MTU" || true
+fi
+
+# Set 4G sebagai default route utama
+ip route replace default via "$GATEWAY" dev "$IFACE" metric "$ROUTE_METRIC"
+
+# Set DNS manual
+if [ ! -f /etc/resolv.conf.backup.ews ]; then
+  cp /etc/resolv.conf /etc/resolv.conf.backup.ews || true
+fi
+
+DNS_LIST=$(echo "$DNS_RAW" | tr ',' ' ')
+
+{
+  for DNS in $DNS_LIST; do
+    echo "nameserver $DNS"
   done
-fi
+  echo "nameserver 8.8.8.8"
+  echo "nameserver 1.1.1.1"
+} > /etc/resolv.conf
 
-echo "[6/7] Aktifkan koneksi 4G..."
+echo "[EWS-GSM] Current route:"
+ip route
 
-nmcli connection down "$CONNECTION_NAME" >/dev/null 2>&1 || true
-sleep 2
-nmcli connection up "$CONNECTION_NAME" || true
+echo "[EWS-GSM] Testing internet via $IFACE..."
+ping -I "$IFACE" -c 3 8.8.8.8 || true
+ping -I "$IFACE" -c 3 google.com || true
 
-echo "[7/7] Status akhir..."
-
-echo ""
-echo "======================================"
-echo " MODEM"
-echo "======================================"
-mmcli -L || true
-
-echo ""
-echo "======================================"
-echo " DEVICE STATUS"
-echo "======================================"
-nmcli device status || true
-
-echo ""
-echo "======================================"
-echo " CONNECTION LIST"
-echo "======================================"
-nmcli connection show || true
-
-echo ""
-echo "======================================"
-echo " IP ROUTE"
-echo "======================================"
-ip route || true
-
-echo ""
-echo "======================================"
-echo " ROUTE KE INTERNET"
-echo "======================================"
-ip route get 8.8.8.8 || true
-
-echo ""
-echo "======================================"
-echo " PING TEST"
-echo "======================================"
-ping -c 4 8.8.8.8 || true
-
-echo ""
-echo "======================================"
-echo " SELESAI"
-echo "======================================"
-echo "Target:"
-echo "- Jika modem terpasang dan konek: internet lewat 4G"
-echo "- Jika modem dicabut: otomatis fallback ke WiFi"
-echo "- Jika modem dipasang lagi: otomatis balik ke 4G"
-echo ""
-echo "Cek manual:"
-echo "ip route get 8.8.8.8"
-echo ""
-echo "Kalau lewat modem biasanya muncul:"
-echo "dev wwan0 / ppp0 / usb0"
-echo ""
-echo "Kalau lewat WiFi muncul:"
-echo "dev wlan0"
+echo "[EWS-GSM] Done."
