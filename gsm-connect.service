@@ -5,7 +5,7 @@ Requires=NetworkManager.service ModemManager.service
 
 [Service]
 Type=oneshot
-ExecStart=/home/pi/efws/scripts/gsm_connect.sh
+ExecStart=/home/uwfadmin/ews/scripts/gsm_connect.sh
 RemainAfterExit=yes
 
 [Install]

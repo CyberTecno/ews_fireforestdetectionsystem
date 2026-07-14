@@ -7,14 +7,14 @@ Requires=gsm-connect.service
 # ── Ganti path sesuai lokasi install di Raspberry Pi ──
 # Struktur project ini FLAT: main.py langsung di root project
 # (sejajar dengan venv/, .env, scripts/, logs/, database/)
-WorkingDirectory=/home/pi/efws
-ExecStart=/home/pi/efws/venv/bin/python main.py
+WorkingDirectory=/home/uwfadmin/ews
+ExecStart=/home/uwfadmin/ews/venv/bin/python main.py
 
 # ── Environment ───────────────────────────────────────
 # systemd membaca file .env LANGSUNG - satu-satunya sumber kebenaran,
 # sama seperti saat dijalankan manual lewat `python main.py`.
 # Tanda "-" di depan path berarti tidak gagal kalau file belum ada.
-EnvironmentFile=-/home/pi/efws/.env
+EnvironmentFile=-/home/uwfadmin/ews/.env
 
 # ── Restart policy ────────────────────────────────────
 Restart=always
@@ -31,8 +31,8 @@ SyslogIdentifier=efws
 # Ganti "pi" sesuai username Raspberry Pi Anda. User ini WAJIB ada di
 # grup gpio, spi, i2c, dialout agar bisa akses GPIO/SPI/I2C/serial port
 # tanpa sudo (lihat docs/DEPLOYMENT.md langkah persiapan user).
-User=pi
-Group=pi
+User=uwfadmin
+Group=uwfadmin
 
 [Install]
 WantedBy=multi-user.target
