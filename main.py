@@ -324,23 +324,35 @@ class EFWS:
                 #    tiap siklus baca tanpa membanjiri jaringan.
                 self.api.flush_queue(self.db)
 
-                pending   = self.db.count_pending_queue()
-                net_tag   = "🔴 OFFLINE" if not self.api.online else "🟢 online "
-                gps_tag   = f"📍{self._location['lat']:.4f},{self._location['lon']:.4f}"
+                pending = self.db.count_pending_queue()
+                net_tag = "🔴 OFFLINE" if not self.api.online else "🟢 ONLINE"
+                gps_tag = f"📍{self._location['lat']:.4f},{self._location['lon']:.4f}"
                 queue_tag = f" | 📦 queue={pending}" if pending > 0 else ""
+
+                soil = payload["telemetry"][0].get("soilMoisture", {})
+                soil_surface = soil.get("surface", 0) or 0
+                soil_deep = soil.get("deep", 0) or 0
+
                 logger.info(
                     "READ #%d | %s | %s | smoke=%.1f%% "
-                    "temp=%.1f°C hum=%.1f%% soil=%.1f%% "
+                    "temp=%.1f°C hum=%.1f%% "
+                    "soil(surface)=%.1f%% soil(deep)=%.1f%% "
                     "wind=%.1fm/s water=%.2fm batt=%.0f%% alarm=%s%s",
-                    reading_id, net_tag, gps_tag, smoke_pct,
+                    reading_id,
+                    net_tag,
+                    gps_tag,
+                    smoke_pct,
                     data["bme280"].get("temperature_c", 0) or 0,
                     data["bme280"].get("humidity_percent", 0) or 0,
-                    payload["telemetry"][0].get("soilMoisture", 0) or 0,
+                    soil_surface,
+                    soil_deep,
                     data["wind"].get("speed_ms", 0) or 0,
                     data.get("pressure", {}).get("depth_m", 0) or 0,
                     data.get("battery", {}).get("percent", 0) or 0,
-                    level, queue_tag,
+                    level,
+                    queue_tag,
                 )
+                
                 time.sleep(settings.SENSOR_READ_INTERVAL_SEC)
 
         except KeyboardInterrupt:
