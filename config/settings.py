@@ -179,11 +179,21 @@ DB_PATH = _opt("EFWS_DB_PATH", str(_ROOT / "database" / "efws_data.db"))
 LOG_PATH = _opt("EFWS_LOG_PATH", str(_ROOT / "logs" / "efws.log"))
 
 # ─── Timing ──────────────────────────────────────────────────────────────────
-# PERUBAHAN: siklus baca sekarang murni "cek threshold", BUKAN "kirim data".
-# Default diubah dari 1800s (30 menit, model lama: kirim tiap siklus) menjadi
-# 180s (3 menit, model baru: baca+evaluasi tiap 3 menit, kirim HANYA kalau
-# ada yang melewati danger threshold -- "emergency upload").
+# Siklus CEK sensor -- selalu jalan tiap interval ini, murni evaluasi
+# threshold (cepat, demi deteksi darurat responsif). TIDAK selalu berarti
+# kirim data -- lihat ROUTINE_SEND_INTERVAL_SEC di bawah.
 SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 180)
+
+# Siklus KIRIM rutin (location+telemetry+heartbeat) saat kondisi NORMAL --
+# SENGAJA dipisah dari SENSOR_READ_INTERVAL_SEC: threshold tetap dicek tiap
+# 3 menit (respons cepat kalau darurat), tapi kalau semua normal, device
+# cukup lapor ke backend tiap ROUTINE_SEND_INTERVAL_SEC (default 3600s /
+# 60 menit) supaya tidak terlihat mati/hilang tanpa membanjiri API.
+# Begitu ada threshold yang dilewati, kirim LANGSUNG saat itu juga
+# ("emergency upload") tanpa menunggu jadwal rutin ini, dan jadwal rutin
+# di-reset dari titik itu (karena backend baru saja menerima laporan).
+ROUTINE_SEND_INTERVAL_SEC = _int("EFWS_ROUTINE_SEND_INTERVAL_SEC", 360)
+
 # Retry offline queue -- berjalan di thread TERPISAH dari siklus baca sensor
 # (lihat main.py EFWS._flush_queue_loop), supaya tetap tiap 2 menit persis
 # walau siklus baca sekarang 3 menit.

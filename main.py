@@ -133,6 +133,7 @@ class EFWS:
 
         self._critical_streak = 0
         self._stop_flag = threading.Event()
+        self._last_routine_send = 0.0  # 0.0 -> kirim rutin pertama langsung di siklus awal
 
         self._location = {
             "lat":    settings.DEVICE_LOCATION["lat"],
@@ -300,6 +301,32 @@ class EFWS:
             logger.warning("🔴 ALARM (lokal, sirine menyala) — %d bacaan berturut: %s",
                            self._critical_streak, triggered)
 
+    # ─── Kirim bundel Location + Telemetry + Heartbeat (dipakai baik oleh
+    # jalur emergency maupun jalur rutin -- satu-satunya tempat ketiganya
+    # dikirim, supaya tidak ada duplikasi logic) ───────────────────────
+    def _send_bundle(self, data, smoke_pct, reason: str):
+        logger.warning("📡 KIRIM (%s) -- Location + Telemetry + Heartbeat", reason)
+
+        location_payload  = self._build_location_payload()
+        telemetry_payload = self._build_telemetry_payload(data, smoke_pct)
+        heartbeat_payload = self._build_heartbeat_payload(data)
+
+        # Endpoint 1, 2, 3 dikirim bersamaan (tiap-tiap masuk offline queue
+        # sendiri kalau gagal karena jaringan/5xx).
+        self.api.send_location(location_payload, db=self.db)
+        self.api.send_telemetry(telemetry_payload, db=self.db)
+        delivered_hb, commands = self.api.send_heartbeat(heartbeat_payload, db=self.db)
+
+        # Endpoint 4: HANYA jalan kalau heartbeat sukses DAN membawa
+        # command -- event-driven, bukan scheduled, berlaku sama baik
+        # bundel ini dipicu emergency maupun rutin.
+        if delivered_hb and commands:
+            self._process_commands(commands)
+
+        pending = self.db.count_pending_queue()
+        if pending:
+            logger.info("📦 %d item masih di offline queue (akan di-retry thread terpisah).", pending)
+
     # ─── Endpoint 4: eksekusi command dari heartbeat, lalu ACK ───
     def _process_commands(self, commands: list):
         for cmd in commands:
@@ -356,13 +383,15 @@ class EFWS:
     # ─── Main loop ───────────────────────────────────────────────
     def run(self):
         logger.info(
-            "EFWS loop started. Cek threshold tiap: %ds | Retry queue tiap: %ds (thread terpisah)",
+            "EFWS loop started. Cek threshold tiap: %ds | Kirim rutin (kalau normal) tiap: %ds | "
+            "Retry queue tiap: %ds (thread terpisah)",
             settings.SENSOR_READ_INTERVAL_SEC,
+            settings.ROUTINE_SEND_INTERVAL_SEC,
             settings.EFWS_CONNECTIVITY_CHECK_SEC,
         )
         try:
             while True:
-                # 1) Baca semua sensor + GPS tiap siklus (sesuai scheduler baru).
+                # 1) Baca semua sensor + GPS tiap siklus.
                 data = self._read_all()
                 self._update_gps()
 
@@ -373,35 +402,32 @@ class EFWS:
                 #    berhasil-tidaknya (atau terjadi-tidaknya) pengiriman ke backend.
                 self._handle_alarm(any_triggered, triggered)
 
-                if not any_triggered:
+                now = time.time()
+
+                if any_triggered:
+                    # Darurat -- kirim SEKARANG, tidak menunggu jadwal rutin.
+                    logger.warning("🚨 EMERGENCY -- threshold terlewati: %s", triggered)
+                    self._send_bundle(data, smoke_pct, reason="EMERGENCY")
+                    # Backend baru saja menerima laporan -- jadwal rutin
+                    # di-reset dari titik ini, supaya tidak dobel kirim
+                    # sesaat kemudian kalau kebetulan jadwal rutin jatuh dekat.
+                    self._last_routine_send = now
+
+                elif now - self._last_routine_send >= settings.ROUTINE_SEND_INTERVAL_SEC:
+                    # Normal, tapi sudah waktunya lapor rutin (device masih hidup).
+                    self._send_bundle(data, smoke_pct, reason="rutin")
+                    self._last_routine_send = now
+
+                else:
+                    next_routine_in = int(settings.ROUTINE_SEND_INTERVAL_SEC - (now - self._last_routine_send))
                     logger.info(
-                        "READ | semua nilai NORMAL (di bawah threshold) — tidak ada emergency upload. "
+                        "READ | semua nilai NORMAL — tidak kirim (kirim rutin berikutnya dalam %ds). "
                         "smoke=%.1f%% temp=%.1f°C hum=%.1f%%",
+                        next_routine_in,
                         smoke_pct,
                         data["bme280"].get("temperature_c", 0) or 0,
                         data["bme280"].get("humidity_percent", 0) or 0,
                     )
-                else:
-                    logger.warning("🚨 EMERGENCY UPLOAD -- threshold terlewati: %s", triggered)
-
-                    location_payload  = self._build_location_payload()
-                    telemetry_payload = self._build_telemetry_payload(data, smoke_pct)
-                    heartbeat_payload = self._build_heartbeat_payload(data)
-
-                    # Endpoint 1, 2, 3 dikirim bersamaan (tiap-tiap masuk
-                    # offline queue sendiri kalau gagal karena jaringan/5xx).
-                    self.api.send_location(location_payload, db=self.db)
-                    self.api.send_telemetry(telemetry_payload, db=self.db)
-                    delivered_hb, commands = self.api.send_heartbeat(heartbeat_payload, db=self.db)
-
-                    # Endpoint 4: HANYA jalan kalau heartbeat sukses DAN
-                    # membawa command -- event-driven, bukan scheduled.
-                    if delivered_hb and commands:
-                        self._process_commands(commands)
-
-                    pending = self.db.count_pending_queue()
-                    if pending:
-                        logger.info("📦 %d item masih di offline queue (akan di-retry thread terpisah).", pending)
 
                 time.sleep(settings.SENSOR_READ_INTERVAL_SEC)
 
