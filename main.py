@@ -90,23 +90,47 @@ def _load_sensors_and_alarm():
         }, MockAlarmController()
     else:
         logger.info("Mode: HARDWARE — mengakses GPIO/SPI/I2C nyata")
-        from sensors.mq2        import MQ2Sensor
-        from sensors.mq135      import MQ135Sensor
-        from sensors.bme280     import BME280Sensor
-        from sensors.pressure   import PressureWaterSensor
-        from sensors.soil       import SoilMoistureSensor
-        from sensors.anemometer import AnemometerSensor
-        from sensors.battery    import BatterySensor
-        from alarm.siren        import AlarmController
-        return {
-            "mq2":      MQ2Sensor(),
-            "mq135":    MQ135Sensor(),
-            "bme280":   BME280Sensor(),
-            "pressure": PressureWaterSensor(),
-            "soil":     SoilMoistureSensor(),
-            "wind":     AnemometerSensor(),
-            "battery":  BatterySensor(),
-        }, AlarmController()
+        from sensors.mq2         import MQ2Sensor
+        from sensors.mq135       import MQ135Sensor
+        from sensors.bme280      import BME280Sensor
+        from sensors.pressure    import PressureWaterSensor
+        from sensors.soil        import SoilMoistureSensor
+        from sensors.anemometer  import AnemometerSensor
+        from sensors.battery     import BatterySensor
+        from sensors.null_sensor import NullSensor, NullAlarmController
+        from alarm.siren         import AlarmController
+
+        factories = {
+            "mq2":      MQ2Sensor,
+            "mq135":    MQ135Sensor,
+            "bme280":   BME280Sensor,
+            "pressure": PressureWaterSensor,
+            "soil":     SoilMoistureSensor,
+            "wind":     AnemometerSensor,
+            "battery":  BatterySensor,
+        }
+        sensors = {}
+        for name, factory in factories.items():
+            try:
+                sensors[name] = factory()
+            except Exception as e:
+                logger.error(
+                    "Sensor '%s' GAGAL diinisialisasi (dianggap TIDAK TERPASANG, "
+                    "nilainya akan 0/null terus di log & payload sampai diperbaiki): %s",
+                    name, e,
+                )
+                sensors[name] = NullSensor(name, str(e))
+
+        try:
+            alarm = AlarmController()
+        except Exception as e:
+            logger.error(
+                "Alarm controller (relay/sirine) GAGAL diinisialisasi — alarm lokal "
+                "dinonaktifkan (sistem tetap jalan, hanya sirine yang tidak menyala): %s", e,
+            )
+            alarm = NullAlarmController(str(e))
+
+        return sensors, alarm
 
 
 # ─── Threshold helpers ───────────────────────────────────────────
@@ -192,12 +216,26 @@ class EFWS:
     # ─── Sensor reads ────────────────────────────────────────────
     def _read_all(self) -> dict:
         data = {}
+        failed = []
         for key, sensor in self.sensors.items():
             try:
                 data[key] = sensor.read()
             except Exception as e:
                 logger.error("Sensor '%s' read error: %s", key, e)
                 data[key] = {"error": str(e)}
+
+            if isinstance(data[key], dict) and data[key].get("error"):
+                failed.append(key)
+
+        # Ringkasan per-siklus: sensor mana saja yang tidak terbaca/kosong
+        # siklus ini -> field-nya otomatis jadi 0/null di evaluasi & payload
+        # (lihat _exceeds, _calc_smoke_level, _build_telemetry_payload).
+        if failed:
+            logger.warning(
+                "⚠️ Sensor TIDAK TERBACA/KOSONG siklus ini (nilai=0/null): %s",
+                ", ".join(failed),
+            )
+
         return data
 
     # ─── Evaluate (single-tier: exceeded / not, sesuai kontrak API) ──
