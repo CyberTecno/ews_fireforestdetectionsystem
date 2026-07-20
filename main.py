@@ -177,6 +177,13 @@ class EFWS:
         self._flush_thread = threading.Thread(target=self._flush_queue_loop, daemon=True)
         self._flush_thread.start()
 
+        # Thread terpisah: auto-purge data lokal (SQLite) yang lebih tua
+        # dari EFWS_DB_RETENTION_DAYS (default 3 hari), dicek tiap
+        # EFWS_DB_RETENTION_CHECK_SEC (default 6 jam) -- independen dari
+        # siklus baca sensor maupun retry offline queue.
+        self._retention_thread = threading.Thread(target=self._retention_loop, daemon=True)
+        self._retention_thread.start()
+
     # ─── Background: retry offline queue, independen dari siklus baca ──
     def _flush_queue_loop(self):
         interval = settings.EFWS_CONNECTIVITY_CHECK_SEC
@@ -185,6 +192,25 @@ class EFWS:
                 self.api.flush_queue(self.db)
             except Exception:
                 logger.error("Flush queue thread error:\n%s", traceback.format_exc())
+            self._stop_flag.wait(interval)
+
+    # ─── Background: auto-hapus data lokal lebih dari N hari (default 3) ──
+    def _retention_loop(self):
+        days = settings.DB_RETENTION_DAYS
+        interval = settings.DB_RETENTION_CHECK_SEC
+        while not self._stop_flag.is_set():
+            try:
+                result = self.db.purge_old_data(days=days)
+                if result["sensor_readings_deleted"] or result["api_queue_deleted"]:
+                    logger.info(
+                        "🧹 Retention: hapus %d baris sensor_readings, %d baris api_queue "
+                        "(lebih tua dari %d hari).",
+                        result["sensor_readings_deleted"],
+                        result["api_queue_deleted"],
+                        days,
+                    )
+            except Exception:
+                logger.error("Retention thread error:\n%s", traceback.format_exc())
             self._stop_flag.wait(interval)
 
     # ─── GPS refresh ─────────────────────────────────────────────
@@ -304,7 +330,7 @@ class EFWS:
                         "surface": soil.get("surface", {}).get("moisture_percent"),
                         "deep":    soil.get("deep", {}).get("moisture_percent"),
                     },
-                    "windSpeed": wind.get("speed_ms"),
+                    "windSpeed": wind.get("speed_ms") if wind.get("speed_ms") is not None else 0,
                     "batteryLevel": battery.get("percent"),
                     "flameDetected": False,
                 }
@@ -348,6 +374,12 @@ class EFWS:
         location_payload  = self._build_location_payload()
         telemetry_payload = self._build_telemetry_payload(data, smoke_pct)
         heartbeat_payload = self._build_heartbeat_payload(data)
+
+        # Simpan ke DB lokal SEBELUM dikirim (sumber kebenaran lokal, dan
+        # untuk audit -- full_payload berisi PERSIS body telemetry yang
+        # dikirim ke API). Baris ini otomatis dibersihkan tiap >3 hari oleh
+        # EFWS._retention_loop (lihat config.DB_RETENTION_DAYS).
+        self.db.log_reading(data, telemetry_payload)
 
         # Endpoint 1, 2, 3 dikirim bersamaan (tiap-tiap masuk offline queue
         # sendiri kalau gagal karena jaringan/5xx).

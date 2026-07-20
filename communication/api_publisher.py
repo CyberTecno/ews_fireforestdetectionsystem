@@ -150,12 +150,14 @@ class APIPublisher:
         body = json.dumps(payload, default=str)
         last_transient = True
 
+        logger.info("📤 KIRIM %s → %s | body=%s", label or endpoint.split("/")[-1], endpoint, body)
+
         for attempt in range(1, settings.API_MAX_RETRIES + 1):
             delivered, status, resp_json, transient = self._post_once(endpoint, body)
             last_transient = transient
 
             if delivered:
-                logger.info("✅ %s terkirim (%s)", label or endpoint.split("/")[-1], endpoint)
+                logger.info("✅ %s terkirim (HTTP %s) → %s", label or endpoint.split("/")[-1], status, endpoint)
                 return True, resp_json
 
             if not transient:
@@ -252,8 +254,10 @@ class APIPublisher:
                 continue
 
             endpoint = item["endpoint"]  # endpoint yang tersimpan saat item di-queue
+            body = json.dumps(payload, default=str)
+            logger.info("📤 KIRIM (dari offline queue #%d) → %s | body=%s", item["id"], endpoint, body)
 
-            delivered, status, resp_json, transient = self._post_once(endpoint, json.dumps(payload, default=str))
+            delivered, status, resp_json, transient = self._post_once(endpoint, body)
 
             if delivered:
                 db.mark_queue_sent(item["id"])

@@ -175,6 +175,14 @@ API_RETRY_DELAY    = _int("EFWS_API_RETRY_DELAY", 5)
 # ─── Database lokal ──────────────────────────────────────────────────────────
 DB_PATH = _opt("EFWS_DB_PATH", str(_ROOT / "database" / "efws_data.db"))
 
+# Retensi data lokal -- baris sensor_readings & api_queue (yang statusnya
+# sudah selesai: terkirim ATAU sudah dibuang permanen) yang lebih tua dari
+# ini otomatis DIHAPUS oleh background thread (lihat main.py:
+# EFWS._retention_loop). Ini menghapus BARIS-BARIS lama di dalam database,
+# BUKAN menghapus file database itu sendiri -- tabel & data terbaru tetap ada.
+DB_RETENTION_DAYS        = _int("EFWS_DB_RETENTION_DAYS", 3)
+DB_RETENTION_CHECK_SEC   = _int("EFWS_DB_RETENTION_CHECK_SEC", 6 * 3600)  # cek tiap 6 jam
+
 # ─── Log files ───────────────────────────────────────────────────────────────
 LOG_PATH = _opt("EFWS_LOG_PATH", str(_ROOT / "logs" / "efws.log"))
 

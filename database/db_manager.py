@@ -18,7 +18,7 @@ real-time, tanpa mempersistensikannya di sini.
 import sqlite3
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from config import settings
 
 
@@ -187,3 +187,43 @@ class DBManager:
 
     def close(self):
         self.conn.close()
+
+    # ─── Retensi data (auto-cleanup) ──────────────────────────────
+    def purge_old_data(self, days: int = 3) -> dict:
+        """
+        Hapus baris LAMA (lebih tua dari `days` hari) dari database lokal.
+        Dipanggil otomatis oleh background thread (main.py:
+        EFWS._retention_loop), bukan menghapus file database-nya sendiri --
+        cuma baris lama di dalamnya, supaya data terbaru (<= `days` hari)
+        tetap ada dan ukuran file tidak terus membengkak.
+
+        - sensor_readings : semua baris lebih tua dari cutoff dihapus.
+        - api_queue        : HANYA baris yang statusnya sudah "selesai"
+                              (sent=1, atau attempts>=10 alias dianggap
+                              gagal permanen) yang dihapus. Item yang masih
+                              aktif menunggu retry TIDAK dihapus meskipun
+                              usianya lebih dari `days` hari, supaya tidak
+                              kehilangan data yang belum sempat terkirim.
+
+        Return: {"sensor_readings_deleted": int, "api_queue_deleted": int}
+        """
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        cur = self.conn.cursor()
+
+        cur.execute("DELETE FROM sensor_readings WHERE timestamp < ?", (cutoff,))
+        deleted_readings = cur.rowcount
+
+        cur.execute(
+            "DELETE FROM api_queue WHERE timestamp < ? AND (sent = 1 OR attempts >= 10)",
+            (cutoff,),
+        )
+        deleted_queue = cur.rowcount
+
+        self.conn.commit()
+        if deleted_readings or deleted_queue:
+            self.conn.execute("VACUUM")  # kecilkan ukuran file .db setelah hapus
+
+        return {
+            "sensor_readings_deleted": deleted_readings,
+            "api_queue_deleted": deleted_queue,
+        }
