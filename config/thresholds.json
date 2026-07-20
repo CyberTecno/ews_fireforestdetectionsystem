@@ -1,56 +1,29 @@
 {
-  "_doc": "Threshold evaluasi internal EFWS. Perubahan di sini berlaku saat restart.",
+  "_doc": "Hardcoded FALLBACK thresholds — dipakai HANYA kalau backend belum pernah mengirim 'config' di response /sensors/telemetry, atau field tertentu di 'config' bernilai null. Begitu backend pernah mengirim config yang valid untuk sebuah field, nilai remote itu yang dipakai (lihat config/threshold_resolver.py). Bentuk JSON ini SENGAJA dibuat identik dengan bentuk 'config' dari API supaya fallback-nya per-field, bukan all-or-nothing.",
 
-  "smoke": {
-    "description": "smokeLevel gabungan MQ-2 + MQ-135 dalam persen (0-100%). Formula dan bobot dikontrol via .env (EFWS_SMOKE_*). Batas di sini hanya untuk evaluasi status — pengiriman tetap ke /sensors/telemetry, bukan ke endpoint alarm terpisah.",
-    "warning_pct":  60.0,
-    "critical_pct": 70.0,
-    "_scale": "0-100% dimana 100% = kedua sensor di angka critical threshold ppm masing-masing (default: MQ2=1000ppm, MQ135=1000ppm)"
-  },
+  "smokeDangerThreshold": 70.0,
+  "_smokeDangerThreshold_note": "smokeLevel gabungan MQ-2+MQ-135 (0-100%), lihat _calc_smoke_level() di main.py.",
 
-  "mq2": {
-    "description": "MQ-2 gas/asap (LPG, butana, asap). Dipakai dalam kalkulasi smokeLevel, bukan evaluasi terpisah.",
-    "warning_ppm":  300,
-    "critical_ppm": 1000,
-    "_smoke_weight": 0.55
-  },
+  "temperatureDangerThreshold": 60.0,
 
-  "mq135": {
-    "description": "MQ-135 kualitas udara (NH3, NOx, CO2-equiv, asap). Dipakai dalam kalkulasi smokeLevel, bukan evaluasi terpisah.",
-    "warning_ppm":  400,
-    "critical_ppm": 1000,
-    "_smoke_weight": 0.45
+  "soilMoistureDangerThreshold": {
+    "surface": 10,
+    "deep": 10
   },
+  "_soilMoistureDangerThreshold_note": "Persen kelembaban tanah. Nilai DI BAWAH ini = kering/berbahaya (evaluasi lower_is_worse).",
 
-  "bme280": {
-    "description": "Suhu dan kelembaban ambient. Suhu tinggi + kelembaban rendah = risiko kebakaran meningkat.",
-    "temp_warning_c":      45,
-    "temp_critical_c":     60,
-    "humidity_low_percent": 30
-  },
+  "humidityDangerThreshold": 30.0,
+  "_humidityDangerThreshold_note": "Persen kelembaban udara. Nilai DI BAWAH ini = kering/berbahaya (evaluasi lower_is_worse).",
 
-  "pressure": {
-    "description": "Ketinggian air (m) dari submersible pressure sensor (loop 4-20mA), misal reservoir/tandon air pemadam. Nilai RENDAH = risiko (air menipis), evaluasi higher_is_worse=false.",
-    "low_warning_m":  1.5,
-    "low_critical_m": 0.5,
-    "_note": "Sesuaikan EFWS_PRESSURE_RANGE_M & nilai di sini dengan kapasitas tandon/reservoir sebenarnya."
-  },
+  "waterDangerThreshold": 0.5,
+  "_waterDangerThreshold_note": "Ketinggian air (m) di tandon/reservoir. Nilai DI BAWAH ini = air menipis (evaluasi lower_is_worse). API contoh mengirim null untuk field ini di sejumlah device -- kalau null, angka lokal ini yang dipakai.",
 
-  "soil": {
-    "description": "Kelembaban tanah (surface 0-30cm dan deep 30-60cm). Evaluasi mengambil nilai terburuk (terendah) dari dua probe. Tanah sangat kering mempercepat penyebaran api.",
-    "dry_percent": 20,
-    "_note": "critical = dry_percent * 0.5 (10% default)"
-  },
-
-  "wind": {
-    "description": "Kecepatan angin dari anemometer RS485. Angin kencang mempercepat penyebaran api.",
-    "high_speed_ms":    8,
-    "extreme_speed_ms": 15
-  },
+  "windDangerThreshold": 15.0,
+  "_windDangerThreshold_note": "m/s. TIDAK ada padanannya di response API (API tidak mengirim threshold angin) -- field ini SELALU dari lokal, tidak pernah di-override remote.",
 
   "alarm": {
     "consecutive_readings_required": 3,
     "cooldown_seconds": 300,
-    "_note": "Alarm CRITICAL baru trigger relay sirine setelah N pembacaan berurut. Pengiriman alarm ke API sudah dihapus — semua data (termasuk status alarm) dikirim lewat telemetry ke /sensors/telemetry."
+    "_note": "Sirine lokal (relay) baru menyala setelah N pembacaan CONSECUTIVE melewati danger threshold berturut-turut. Ini independen dari pengiriman emergency upload ke backend."
   }
 }

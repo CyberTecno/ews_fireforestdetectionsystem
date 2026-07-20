@@ -1,15 +1,31 @@
 """
 Early Fire Warning System (EFWS) - Main Orchestrator
+
+ARSITEKTUR BARU (lihat penjelasan lengkap di chat sebelum file ini dibuat):
+  - Siklus baca sensor (default 3 menit) HANYA mengevaluasi threshold.
+    Tidak ada penyimpanan ke SQLite dan tidak ada pengiriman kalau semua
+    nilai di bawah threshold ("nothing happens").
+  - Kalau ADA nilai yang melewati threshold -> "emergency upload": kirim
+    Location + Telemetry + Heartbeat sekaligus (endpoint 1,2,3).
+  - Endpoint 4 (/sensors/commands/ack) HANYA jalan kalau response
+    Heartbeat membawa 'commands' -- event-driven, di luar scheduler.
+  - Threshold aktif = remote config (dari response Telemetry) di-merge
+    per-field dengan hardcoded lokal (config/threshold_resolver.py).
+  - Retry offline queue (tiap 2 menit) berjalan di thread terpisah,
+    independen dari siklus baca sensor (3 menit).
 """
 import json
 import time
 import logging
+import threading
+import subprocess
 import traceback
 from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from config import settings
+from config.threshold_resolver import resolve_active_thresholds
 from database.db_manager import DBManager
 from communication.api_publisher import APIPublisher
 
@@ -35,7 +51,6 @@ def _calc_smoke_level(mq2_ppm: float, mq135_ppm: float) -> float:
     """
     Gabungkan MQ-2 dan MQ-135 menjadi satu persentase 0-100%.
     Formula: (mq2/MQ2_CRIT * W_MQ2 + mq135/MQ135_CRIT * W_MQ135) * 100
-    Batas: 60-70% = WARNING, ≥70% = CRITICAL.
     """
     n2   = min(mq2_ppm   / settings.SMOKE_MQ2_CRIT_PPM,   1.5)
     n135 = min(mq135_ppm / settings.SMOKE_MQ135_CRIT_PPM, 1.5)
@@ -95,38 +110,29 @@ def _load_sensors_and_alarm():
 
 
 # ─── Threshold helpers ───────────────────────────────────────────
-def _load_thresholds() -> dict:
+def _load_hardcoded_thresholds() -> dict:
     with open(settings.THRESHOLDS_PATH) as f:
         return json.load(f)
 
 
-def _evaluate_status(value, warning, critical, higher_is_worse=True) -> str:
-    if value is None:
-        return "unknown"
-    if higher_is_worse:
-        if value >= critical: return "critical"
-        if value >= warning:  return "warning"
-        return "normal"
-    else:
-        if value <= critical: return "critical"
-        if value <= warning:  return "warning"
-        return "normal"
+def _exceeds(value, danger, lower_is_worse) -> bool:
+    """True kalau value melewati danger threshold. None value -> selalu False (unknown, bukan alarm)."""
+    if value is None or danger is None:
+        return False
+    return (value <= danger) if lower_is_worse else (value >= danger)
 
 
 # ─── Main class ──────────────────────────────────────────────────
 class EFWS:
-    GPS_UPDATE_INTERVAL = int(settings._opt("EFWS_GPS_INTERVAL", "300"))
-
     def __init__(self):
-        self.thresholds           = _load_thresholds()
+        self.hardcoded_thresholds = _load_hardcoded_thresholds()
         self.sensors, self.alarm  = _load_sensors_and_alarm()
         self.api                  = APIPublisher()
         self.db                   = DBManager()
         self.sim                  = _load_sim()   # auto-detect A7670E atau SIM7600
 
-        self._critical_streak  = 0
-        self._last_alarm_time  = 0.0
-        self._last_gps_update  = 0.0
+        self._critical_streak = 0
+        self._stop_flag = threading.Event()
 
         self._location = {
             "lat":    settings.DEVICE_LOCATION["lat"],
@@ -138,7 +144,23 @@ class EFWS:
         logger.info("EFWS initialised. Device: %s | Mode: %s | SIM: %s",
                     settings.DEVICE_ID, settings.RUN_MODE,
                     self.sim.module.upper() if self.sim else "none")
-        self._update_gps()
+
+        # Thread terpisah khusus retry offline queue tiap
+        # EFWS_CONNECTIVITY_CHECK_SEC (2 menit) -- SENGAJA independen dari
+        # siklus baca sensor (3 menit), supaya requirement "retry every
+        # 2 minutes" tetap terpenuhi persis walau siklus baca lebih lambat.
+        self._flush_thread = threading.Thread(target=self._flush_queue_loop, daemon=True)
+        self._flush_thread.start()
+
+    # ─── Background: retry offline queue, independen dari siklus baca ──
+    def _flush_queue_loop(self):
+        interval = settings.EFWS_CONNECTIVITY_CHECK_SEC
+        while not self._stop_flag.is_set():
+            try:
+                self.api.flush_queue(self.db)
+            except Exception:
+                logger.error("Flush queue thread error:\n%s", traceback.format_exc())
+            self._stop_flag.wait(interval)
 
     # ─── GPS refresh ─────────────────────────────────────────────
     def _update_gps(self):
@@ -152,7 +174,6 @@ class EFWS:
             logger.warning("GPS error: %s", e)
             return
 
-        self._last_gps_update = time.time()
         if result.get("fix"):
             self._location = {
                 "lat":        result["lat"],
@@ -178,63 +199,51 @@ class EFWS:
                 data[key] = {"error": str(e)}
         return data
 
-    # ─── Evaluate ────────────────────────────────────────────────
+    # ─── Evaluate (single-tier: exceeded / not, sesuai kontrak API) ──
     def _evaluate(self, data: dict):
-        t  = self.thresholds
+        """
+        Threshold aktif = merge remote config (dari response telemetry
+        terakhir) dengan hardcoded lokal, per-field (lihat threshold_resolver).
+        Return: (any_triggered: bool, triggered: list[str], smoke_pct: float)
+        """
+        t = resolve_active_thresholds(self.hardcoded_thresholds, self.api.remote_config)
 
-        # smokeLevel: gabungan MQ-2 + MQ-135 → 0-100%
         smoke_pct = _calc_smoke_level(
-            data["mq2"].get("ppm",   0),
+            data["mq2"].get("ppm", 0),
             data["mq135"].get("ppm", 0),
         )
-        st = {}
-        st["smoke"]       = ("critical" if smoke_pct >= settings.SMOKE_CRITICAL_PCT
-                             else "warning" if smoke_pct >= settings.SMOKE_WARNING_PCT
-                             else "normal")
-        st["temperature"]  = _evaluate_status(data["bme280"].get("temperature_c"),
-                                              t["bme280"]["temp_warning_c"], t["bme280"]["temp_critical_c"])
-        st["humidity_low"] = _evaluate_status(data["bme280"].get("humidity_percent"),
-                                              t["bme280"]["humidity_low_percent"],
-                                              t["bme280"]["humidity_low_percent"] * 0.5,
-                                              higher_is_worse=False)
-        st["water_low"]   = _evaluate_status(data["pressure"].get("depth_m"),
-                                              t["pressure"]["low_warning_m"],
-                                              t["pressure"]["low_critical_m"],
-                                              higher_is_worse=False)
-        soil_min = min(
-            data["soil"].get("surface", {}).get("moisture_percent", 100),
-            data["soil"].get("deep",    {}).get("moisture_percent", 100),
-        )
-        st["soil_dry"]    = _evaluate_status(soil_min,
-                                              t["soil"]["dry_percent"],
-                                              t["soil"]["dry_percent"] * 0.5,
-                                              higher_is_worse=False)
-        st["wind"]        = _evaluate_status(data["wind"].get("speed_ms"),
-                                              t["wind"]["high_speed_ms"], t["wind"]["extreme_speed_ms"])
 
-        level, triggered = "none", []
-        for k, s in st.items():
-            if s == "critical":
-                level = "critical"; triggered.append(k)
-            elif s == "warning" and level != "critical":
-                level = "warning"; triggered.append(k)
+        surface = data["soil"].get("surface", {}).get("moisture_percent")
+        deep    = data["soil"].get("deep", {}).get("moisture_percent")
 
-        return level, triggered, st, smoke_pct
+        checks = {
+            "smoke":       _exceeds(smoke_pct, t["smokeDangerThreshold"], lower_is_worse=False),
+            "temperature": _exceeds(data["bme280"].get("temperature_c"), t["temperatureDangerThreshold"], lower_is_worse=False),
+            "humidity":    _exceeds(data["bme280"].get("humidity_percent"), t["humidityDangerThreshold"], lower_is_worse=True),
+            "water":       _exceeds(data["pressure"].get("depth_m"), t["waterDangerThreshold"], lower_is_worse=True),
+            "soil_surface": _exceeds(surface, t["soilMoistureDangerThreshold"]["surface"], lower_is_worse=True),
+            "soil_deep":    _exceeds(deep,    t["soilMoistureDangerThreshold"]["deep"],    lower_is_worse=True),
+            "wind":        _exceeds(data["wind"].get("speed_ms"), t["windDangerThreshold"], lower_is_worse=False),
+        }
 
-    # ─── Payload builder ─────────────────────────────────────────
-    def _build_payload(self, data, statuses, level, triggered, smoke_pct) -> dict:
-        """
-        Build telemetry payload sesuai kontrak backend terbaru.
-        """
+        triggered = [k for k, v in checks.items() if v]
+        return (len(triggered) > 0), triggered, smoke_pct
 
-        soil = data.get("soil", {})
-        bme = data.get("bme280", {})
-        wind = data.get("wind", {})
+    # ─── Payload builders (kontrak backend, endpoint 1/2/3/4) ────
+    def _build_location_payload(self) -> dict:
+        return {
+            "deviceId":    settings.DEVICE_ID,
+            "deviceToken": settings.DEVICE_TOKEN,
+            "latitude":    self._location["lat"],
+            "longitude":   self._location["lon"],
+        }
+
+    def _build_telemetry_payload(self, data, smoke_pct) -> dict:
+        soil     = data.get("soil", {})
+        bme      = data.get("bme280", {})
+        wind     = data.get("wind", {})
         pressure = data.get("pressure", {})
-        battery = data.get("battery", {})
-
-        surface = soil.get("surface", {}).get("moisture_percent")
-        deep = soil.get("deep", {}).get("moisture_percent")
+        battery  = data.get("battery", {})
 
         timestamp = (
             datetime.now(ZoneInfo("Asia/Jakarta"))
@@ -253,8 +262,8 @@ class EFWS:
                     "temp": bme.get("temperature_c"),
                     "humidity": bme.get("humidity_percent"),
                     "soilMoisture": {
-                        "surface": surface,
-                        "deep": deep,
+                        "surface": soil.get("surface", {}).get("moisture_percent"),
+                        "deep":    soil.get("deep", {}).get("moisture_percent"),
                     },
                     "windSpeed": wind.get("speed_ms"),
                     "batteryLevel": battery.get("percent"),
@@ -263,96 +272,137 @@ class EFWS:
             ],
         }
 
-    # ─── Alarm handler (LOKAL saja — tidak disimpan ke DB) ────────
-    def _handle_alarm(self, level, triggered):
-        """
-        Threshold & keputusan alarm sekarang murni tanggung jawab backend
-        (device tidak menyimpan alarm_level/triggered_by/threshold apa pun
-        ke database lokal — lihat db_manager.py).
+    def _build_heartbeat_payload(self, data) -> dict:
+        return {
+            "deviceId":     settings.DEVICE_ID,
+            "deviceToken":  settings.DEVICE_TOKEN,
+            "batteryLevel": data.get("battery", {}).get("percent"),
+        }
 
-        Evaluasi lokal (_evaluate) tetap dijalankan HANYA untuk menyalakan
-        sirine secara real-time di lapangan, supaya alarm fisik tidak
-        bergantung pada round-trip ke backend saat kondisi kritis.
-        """
-        cfg      = self.thresholds.get("alarm", {})
+    def _build_ack_payload(self, command_id: str, status: str, error: str = "") -> dict:
+        return {
+            "deviceId":    settings.DEVICE_ID,
+            "deviceToken": settings.DEVICE_TOKEN,
+            "commandId":   command_id,
+            "status":      status,
+            "error":       error,
+        }
+
+    # ─── Alarm handler LOKAL (sirine real-time, independen dari backend) ──
+    def _handle_alarm(self, any_triggered: bool, triggered: list):
+        cfg      = self.hardcoded_thresholds.get("alarm", {})
         required = cfg.get("consecutive_readings_required", 3)
 
-        self._critical_streak = (self._critical_streak + 1) if level == "critical" else 0
-        self.alarm.set_level(level)
+        self._critical_streak = (self._critical_streak + 1) if any_triggered else 0
+        self.alarm.set_level("critical" if any_triggered else "normal")
 
-        if level == "critical" and self._critical_streak >= required:
-            logger.warning("🔴 ALARM CRITICAL (lokal, sirine menyala): %s", triggered)
-        elif level == "warning":
-            logger.warning("🟡 ALARM WARNING (lokal, sirine berdenyut): %s", triggered)
+        if any_triggered and self._critical_streak >= required:
+            logger.warning("🔴 ALARM (lokal, sirine menyala) — %d bacaan berturut: %s",
+                           self._critical_streak, triggered)
+
+    # ─── Endpoint 4: eksekusi command dari heartbeat, lalu ACK ───
+    def _process_commands(self, commands: list):
+        for cmd in commands:
+            command_id = cmd.get("id", "")
+            command_name = cmd.get("command", "")
+            logger.warning("📥 Command diterima dari backend: id=%s command=%s", command_id, command_name)
+
+            handler = self._COMMAND_HANDLERS.get(command_name)
+            if handler is None:
+                logger.error("Command '%s' tidak dikenal.", command_name)
+                ack = self._build_ack_payload(command_id, "FAILED", f"Unknown command: {command_name}")
+                self.api.send_command_ack(ack, db=self.db)
+                continue
+
+            try:
+                handler(self)
+                ack = self._build_ack_payload(command_id, "SUCCESS")
+            except Exception as e:
+                logger.error("Command '%s' gagal: %s", command_name, e)
+                ack = self._build_ack_payload(command_id, "FAILED", str(e))
+
+            self.api.send_command_ack(ack, db=self.db)
+
+    def _cmd_reboot(self):
+        """
+        CATATAN ARSITEKTUR PENTING:
+        Spec minta "execute -> wait until complete -> baru kirim ACK". Untuk
+        command Reboot ini SECARA TEKNIS TIDAK MUNGKIN dipenuhi literal:
+        begitu `systemctl restart efws.service` dieksekusi, proses Python
+        yang sedang jalan (proses ini sendiri) akan dibunuh SEBELUM sempat
+        mengirim ACK "setelah selesai".
+
+        Solusi yang dipakai: dispatch restart lewat proses child yang
+        DETACHED dengan delay singkat (EFWS_REBOOT_DELAY_SEC, default 5s),
+        lalu anggap "berhasil" begitu restart itu terjadwal (bukan setelah
+        restart benar-benar selesai) -- ACK SUCCESS dikirim oleh caller
+        (_process_commands) SEGERA setelah fungsi ini return, memberi waktu
+        ACK terkirim ke backend sebelum proses ini benar-benar mati.
+        """
+        delay = settings.COMMAND_REBOOT_DELAY_SEC
+        logger.warning("🔄 Reboot dijadwalkan %ds lagi (setelah ACK dikirim)...", delay)
+        subprocess.Popen(
+            ["setsid", "bash", "-c", f"sleep {delay} && sudo -n systemctl restart efws.service"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    _COMMAND_HANDLERS = {
+        "Reboot": _cmd_reboot,
+    }
 
     # ─── Main loop ───────────────────────────────────────────────
     def run(self):
-        logger.info("EFWS loop started. Baca+kirim tiap: %ds | Cek sinyal ulang tiap: %ds | GPS: %ds",
-                    settings.SENSOR_READ_INTERVAL_SEC,
-                    self.api._connectivity_check_interval,
-                    self.GPS_UPDATE_INTERVAL)
+        logger.info(
+            "EFWS loop started. Cek threshold tiap: %ds | Retry queue tiap: %ds (thread terpisah)",
+            settings.SENSOR_READ_INTERVAL_SEC,
+            settings.EFWS_CONNECTIVITY_CHECK_SEC,
+        )
         try:
             while True:
-                now = time.time()
-
-                if now - self._last_gps_update >= self.GPS_UPDATE_INTERVAL:
-                    self._update_gps()
-
-                # 1) Baca semua sensor
+                # 1) Baca semua sensor + GPS tiap siklus (sesuai scheduler baru).
                 data = self._read_all()
-                level, triggered, statuses, smoke_pct = self._evaluate(data)
-                payload = self._build_payload(data, statuses, level, triggered, smoke_pct)
+                self._update_gps()
 
-                # 2) SELALU simpan ke DB dulu (sumber kebenaran lokal),
-                #    baru dicoba dikirim. Kalau device mati/reboot di
-                #    tengah jalan, data yang sudah masuk DB tidak hilang.
-                reading_id = self.db.log_reading(data, payload)
+                # 2) Evaluasi threshold aktif (remote-first, fallback lokal per-field).
+                any_triggered, triggered, smoke_pct = self._evaluate(data)
 
-                # 3) Sirine lokal (real-time, tidak nunggu backend)
-                self._handle_alarm(level, triggered)
+                # 3) Sirine lokal selalu dievaluasi real-time, independen dari
+                #    berhasil-tidaknya (atau terjadi-tidaknya) pengiriman ke backend.
+                self._handle_alarm(any_triggered, triggered)
 
-                # 4) Coba kirim SEKARANG. Kalau gagal (sinyal mati),
-                #    otomatis masuk antrian (api.send_telemetry -> db.queue_api).
-                #    Kalau sinyal memang lagi mati, publisher tidak akan
-                #    nyoba re-connect tiap detik — hanya tiap
-                #    _connectivity_check_interval (2 menit) supaya hemat sinyal.
-                self.api.send_telemetry(payload, db=self.db)
+                if not any_triggered:
+                    logger.info(
+                        "READ | semua nilai NORMAL (di bawah threshold) — tidak ada emergency upload. "
+                        "smoke=%.1f%% temp=%.1f°C hum=%.1f%%",
+                        smoke_pct,
+                        data["bme280"].get("temperature_c", 0) or 0,
+                        data["bme280"].get("humidity_percent", 0) or 0,
+                    )
+                else:
+                    logger.warning("🚨 EMERGENCY UPLOAD -- threshold terlewati: %s", triggered)
 
-                # 5) Setiap loop juga coba flush antrian lama (kalau ada).
-                #    flush_queue() sendiri sudah dibatasi 2 menit lewat
-                #    _check_connectivity() saat offline, jadi aman dipanggil
-                #    tiap siklus baca tanpa membanjiri jaringan.
-                self.api.flush_queue(self.db)
+                    location_payload  = self._build_location_payload()
+                    telemetry_payload = self._build_telemetry_payload(data, smoke_pct)
+                    heartbeat_payload = self._build_heartbeat_payload(data)
 
-                pending = self.db.count_pending_queue()
-                net_tag = "🔴 OFFLINE" if not self.api.online else "🟢 ONLINE"
-                gps_tag = f"📍{self._location['lat']:.4f},{self._location['lon']:.4f}"
-                queue_tag = f" | 📦 queue={pending}" if pending > 0 else ""
+                    # Endpoint 1, 2, 3 dikirim bersamaan (tiap-tiap masuk
+                    # offline queue sendiri kalau gagal karena jaringan/5xx).
+                    self.api.send_location(location_payload, db=self.db)
+                    self.api.send_telemetry(telemetry_payload, db=self.db)
+                    delivered_hb, commands = self.api.send_heartbeat(heartbeat_payload, db=self.db)
 
-                soil = payload["telemetry"][0].get("soilMoisture", {})
-                soil_surface = soil.get("surface", 0) or 0
-                soil_deep = soil.get("deep", 0) or 0
+                    # Endpoint 4: HANYA jalan kalau heartbeat sukses DAN
+                    # membawa command -- event-driven, bukan scheduled.
+                    if delivered_hb and commands:
+                        self._process_commands(commands)
 
-                logger.info(
-                    "READ #%d | %s | %s | smoke=%.1f%% "
-                    "temp=%.1f°C hum=%.1f%% "
-                    "soil(surface)=%.1f%% soil(deep)=%.1f%% "
-                    "wind=%.1fm/s water=%.2fm batt=%.0f%% alarm=%s%s",
-                    reading_id,
-                    net_tag,
-                    gps_tag,
-                    smoke_pct,
-                    data["bme280"].get("temperature_c", 0) or 0,
-                    data["bme280"].get("humidity_percent", 0) or 0,
-                    soil_surface,
-                    soil_deep,
-                    data["wind"].get("speed_ms", 0) or 0,
-                    data.get("pressure", {}).get("depth_m", 0) or 0,
-                    data.get("battery", {}).get("percent", 0) or 0,
-                    level,
-                    queue_tag,
-                )
-                
+                    pending = self.db.count_pending_queue()
+                    if pending:
+                        logger.info("📦 %d item masih di offline queue (akan di-retry thread terpisah).", pending)
+
                 time.sleep(settings.SENSOR_READ_INTERVAL_SEC)
 
         except KeyboardInterrupt:
@@ -360,6 +410,7 @@ class EFWS:
         except Exception:
             logger.critical("EFWS crash!\n%s", traceback.format_exc())
         finally:
+            self._stop_flag.set()
             self.alarm.silence()
             self.api.close()
             if self.sim:

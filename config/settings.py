@@ -138,16 +138,34 @@ APN              = _opt("EFWS_APN", "internet")
 
 # ─── REST API ────────────────────────────────────────────────────────────────
 API_BASE_URL       = _req("EFWS_API_URL")
-# CATATAN: API_DATA_ENDPOINT dan API_ALARM_ENDPOINT SENGAJA tidak
-# didefinisikan sebagai konstanta modul di sini. Keduanya dibaca lewat
-# fungsi dinamis di bawah agar URL yang berlaku saat runtime selalu
-# menggunakan nilai EFWS_API_URL terkini dari env — termasuk saat .env
-# diubah dan service di-restart, atau saat URL diganti di tengah sesi.
-# Gunakan: settings.data_endpoint() dan settings.alarm_endpoint()
+# CATATAN: endpoint URL SENGAJA tidak didefinisikan sebagai konstanta
+# modul, tapi lewat fungsi dinamis di bawah, supaya URL yang berlaku saat
+# runtime selalu memakai EFWS_API_URL terkini dari env — termasuk kalau
+# .env diubah dan service di-restart. Ada 4 endpoint:
+#   telemetry_endpoint()   -> /sensors/telemetry     (scheduled, bawa config remote)
+#   location_endpoint()    -> /sensors/location       (scheduled)
+#   heartbeat_endpoint()   -> /sensors/heartbeat      (scheduled, bawa commands)
+#   command_ack_endpoint() -> /sensors/commands/ack   (event-driven, dari commands)
+
+def _base_url() -> str:
+    return os.getenv("EFWS_API_URL", API_BASE_URL).rstrip("/")
 
 def telemetry_endpoint() -> str:
-    """Satu-satunya endpoint pengiriman data — semua payload (data + alarm state) ke sini."""
-    return os.getenv("EFWS_API_URL", API_BASE_URL).rstrip("/") + "/sensors/telemetry"
+    """Data sensor + smokeLevel dsb. Response-nya membawa 'config' (threshold remote)."""
+    return _base_url() + "/sensors/telemetry"
+
+def location_endpoint() -> str:
+    """Update posisi GPS/fallback device."""
+    return _base_url() + "/sensors/location"
+
+def heartbeat_endpoint() -> str:
+    """Health check + tempat backend menitipkan 'commands' (mis. Reboot)."""
+    return _base_url() + "/sensors/heartbeat"
+
+def command_ack_endpoint() -> str:
+    """ACK hasil eksekusi command yang diterima lewat heartbeat. Event-driven, tidak scheduled."""
+    return _base_url() + "/sensors/commands/ack"
+
 API_SECRET_KEY     = _opt("EFWS_API_KEY", "")
 API_VERIFY_SSL     = _bool("EFWS_VERIFY_SSL", True)
 API_TIMEOUT_SEC    = _int("EFWS_API_TIMEOUT", 10)
@@ -161,8 +179,22 @@ DB_PATH = _opt("EFWS_DB_PATH", str(_ROOT / "database" / "efws_data.db"))
 LOG_PATH = _opt("EFWS_LOG_PATH", str(_ROOT / "logs" / "efws.log"))
 
 # ─── Timing ──────────────────────────────────────────────────────────────────
-SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 1800)  # default 30 menit
-EFWS_CONNECTIVITY_CHECK_SEC = _int("EFWS_CONNECTIVITY_CHECK_SEC", 120)  # cek sinyal ulang tiap 2 menit saat offline
+# PERUBAHAN: siklus baca sekarang murni "cek threshold", BUKAN "kirim data".
+# Default diubah dari 1800s (30 menit, model lama: kirim tiap siklus) menjadi
+# 180s (3 menit, model baru: baca+evaluasi tiap 3 menit, kirim HANYA kalau
+# ada yang melewati danger threshold -- "emergency upload").
+SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 180)
+# Retry offline queue -- berjalan di thread TERPISAH dari siklus baca sensor
+# (lihat main.py EFWS._flush_queue_loop), supaya tetap tiap 2 menit persis
+# walau siklus baca sekarang 3 menit.
+EFWS_CONNECTIVITY_CHECK_SEC = _int("EFWS_CONNECTIVITY_CHECK_SEC", 120)
+
+# ─── Command executor (endpoint 4: /sensors/commands/ack) ──────────────────
+# Delay sebelum benar-benar restart setelah command "Reboot" diterima.
+# Kenapa perlu delay: proses ini harus sempat MENGIRIM ack SUCCESS dulu
+# sebelum systemctl restart membunuh proses Python yang sedang jalan.
+# Lihat main.py: EFWS._cmd_reboot() untuk detail.
+COMMAND_REBOOT_DELAY_SEC = _int("EFWS_REBOOT_DELAY_SEC", 5)
 
 # ─── Threshold file ──────────────────────────────────────────────────────────
 THRESHOLDS_PATH = str(_ROOT / "config" / "thresholds.json")

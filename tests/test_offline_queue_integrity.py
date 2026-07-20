@@ -84,7 +84,8 @@ def main():
 
     def fake_post_once(endpoint, body):
         sent_payloads.append(json.loads(body))
-        return True  # simulasikan sukses terkirim
+        # _post_once sekarang return 4-tuple: (delivered, status_code, response_json, transient)
+        return True, 200, {"success": True}, False
 
     api._post_once = fake_post_once
     api.online = True  # paksa anggap sinyal sudah kembali
