@@ -86,7 +86,22 @@ def _identify_port(port: str) -> "str | None":
                        port, ati_resp[:80])
         return None
 
-    except (OSError, serial.SerialException):
+    except serial.SerialException as e:
+        logger.debug(
+            "%s busy (%s)",
+            port,
+            e
+        )
+
+        return None
+
+    except OSError as e:
+        logger.debug(
+            "%s error (%s)",
+            port,
+            e
+        )
+
         return None
 
 
@@ -135,36 +150,62 @@ def _save_cache(info: dict):
 
 
 def detect_sim(force_scan: bool = False) -> "SimInterface":
-    """
-    Deteksi modul SIM dan return SimInterface yang sesuai.
 
-    Args:
-        force_scan: True = abaikan cache, scan ulang dari awal.
-
-    Return: SimInterface (wrapper unified di atas A7670E atau SIM7600).
-    Raise:  RuntimeError jika tidak ada modul yang terdeteksi dan
-            bukan dalam mode mock.
-    """
     if settings.RUN_MODE == "mock":
         logger.info("Mode MOCK — pakai MockSimInterface.")
         return MockSimInterface()
 
     info = None if force_scan else _load_cache()
 
+    # ==========================
+    # VALIDASI CACHE
+    # ==========================
+
+    if info is not None:
+
+        try:
+
+            sim = SimInterface(
+                port=info["port"],
+                module=info["module"],
+            )
+
+            if sim.check_module():
+                return sim
+
+            logger.warning(
+                "Cache tidak valid (AT tidak merespons), scan ulang..."
+            )
+
+        except Exception as e:
+
+            logger.warning(
+                "Cache gagal (%s), scan ulang...",
+                e
+            )
+
+        info = None
+
+    # ==========================
+    # SCAN ULANG
+    # ==========================
+
     if info is None:
+
         info = scan_ports()
+
         if info:
             _save_cache(info)
 
-    if info is None:
-        raise RuntimeError(
-            "Tidak ada modul SIM (A7670E/SIM7670E atau SIM7600) yang terdeteksi. "
-            "Cek koneksi USB dan jalankan: ls /dev/ttyUSB*"
-        )
+        else:
+            raise RuntimeError(
+                "Tidak ada modul SIM yang terdeteksi."
+            )
 
-    return SimInterface(port=info["port"], module=info["module"])
-
-
+    return SimInterface(
+        port=info["port"],
+        module=info["module"],
+    )
 # ─── Unified interface ────────────────────────────────────────────────────────
 
 class SimInterface:
