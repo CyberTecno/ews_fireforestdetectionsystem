@@ -216,13 +216,18 @@ class EFWS:
     # ─── GPS refresh ─────────────────────────────────────────────
     def _update_gps(self):
         if self.sim is None:
+            logger.warning("📍 SIM/GPS tidak tersedia -- pakai lokasi fallback dari config (%s).",
+                           self._location)
             return
-        logger.info("📡 Meminta data GPS dari %s...",
-                    self.sim.module.upper() if hasattr(self.sim, "module") else "SIM")
+
+        module_name = self.sim.module.upper() if hasattr(self.sim, "module") else "SIM"
+        logger.info("📡 Meminta data GPS dari %s (port=%s)...",
+                    module_name, getattr(self.sim, "port", "?"))
         try:
             result = self.sim.get_gps(timeout=settings._int("EFWS_GPS_TIMEOUT", 90))
         except Exception as e:
-            logger.warning("GPS error: %s", e)
+            logger.warning("📍 GPS error dari %s: %s -- lokasi TETAP pakai nilai sebelumnya/fallback.",
+                           module_name, e)
             return
 
         if result.get("fix"):
@@ -233,9 +238,19 @@ class EFWS:
                 "source":     "gps",
                 "fix":        True,
             }
-            logger.info("📍 GPS fix: lat=%.6f, lon=%.6f", result["lat"], result["lon"])
+            # Log eksplisit: modul mana, dan raw NMEA (kalau ada) sebagai bukti
+            # ini data LIVE dari hardware, bukan nilai lama/hasil cache.
+            logger.info(
+                "📍 GPS FIX NYATA dari %s: lat=%.6f, lon=%.6f, alt=%sm%s",
+                module_name, result["lat"], result["lon"],
+                result.get("altitude_m"),
+                f" | mock=True (bukan hardware asli)" if result.get("_mock") else "",
+            )
+            if result.get("raw"):
+                logger.debug("📍 Raw +CGPSINFO dari %s: %s", module_name, result["raw"])
         else:
-            logger.warning("📍 GPS tidak fix: %s", result.get("reason"))
+            logger.warning("📍 GPS dari %s TIDAK fix (%s) -- lokasi yang dipakai/dikirim JATUH KE FALLBACK config.",
+                           module_name, result.get("reason"))
             self._location["fix"]    = False
             self._location["source"] = "fallback"
 
@@ -372,6 +387,12 @@ class EFWS:
         logger.warning("📡 KIRIM (%s) -- Location + Telemetry + Heartbeat", reason)
 
         location_payload  = self._build_location_payload()
+        logger.info(
+            "📍 Location yang dikirim: lat=%s, lon=%s | source=%s (%s)",
+            self._location.get("lat"), self._location.get("lon"),
+            self._location.get("source"),
+            "GPS asli" if self._location.get("source") == "gps" else "fallback config, BUKAN dari GPS",
+        )
         telemetry_payload = self._build_telemetry_payload(data, smoke_pct)
         heartbeat_payload = self._build_heartbeat_payload(data)
 
