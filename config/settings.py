@@ -99,6 +99,13 @@ ADC_CHANNEL_PRESSURE        = _int("EFWS_ADC_PRESSURE",      4)   # LLC HV-5 (pr
 ADC_CHANNEL_BATTERY         = _int("EFWS_ADC_BATTERY",       5)   # LLC HV-6 (voltage sensor module OUT)
 # CH6-CH7 tidak dikabel — spare fisik di MCP3008
 
+# ─── Gravity Rainfall Sensor (DFRobot SEN0575) ─────────────────────────────
+I2C_BUS = 1
+# DFRobot SEN0575
+RAINFALL_I2C_ADDRESS = 0x1D
+# Interval pembacaan (detik)
+RAINFALL_READ_INTERVAL = 2
+
 # ─── Battery — Modul Sensor Tegangan DC 0-25V ────────────────────────────────
 BATTERY_SENSOR_MAX_V = _float("EFWS_BATTERY_SENSOR_MAX_V", 25.0)  # max input modul sensor (V)
 BATTERY_MAX_V        = _float("EFWS_BATTERY_MAX_V",        12.6)  # tegangan baterai penuh (V)
