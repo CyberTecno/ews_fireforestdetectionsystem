@@ -157,39 +157,24 @@ class RainfallSensor:
             "little"
         ) / 10000.0
 
-    def rainfall(self, hours=1):
+    def rainfall(self):
+        """
+        Read rainfall for previously configured window.
 
-        if hours < 1 or hours > 24:
-            raise ValueError("hours must be between 1 and 24")
+        Does NOT write register 0x26.
+        """
 
-        self._write(
-            self.REG_RAIN_HOUR,
-            [hours]
+        data = self._read(
+            self.REG_TIME_RAINFALL,
+            4
         )
 
-        # sensor needs time after changing hour
-        time.sleep(0.10)
-
-        for _ in range(5):
-
-            try:
-
-                data = self._read(
-                    self.REG_TIME_RAINFALL,
-                    4
-                )
-
-                return int.from_bytes(
-                    data,
-                    "little"
-                ) / 10000.0
-
-            except OSError:
-
-                time.sleep(0.05)
-
-        raise IOError(
-            "Unable to read rainfall after setting hour."
+        return round(
+            int.from_bytes(
+                data,
+                "little"
+            ) / 10000,
+            4
         )
 
     def raw_tip_count(self):
