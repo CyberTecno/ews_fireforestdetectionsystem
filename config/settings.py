@@ -134,10 +134,54 @@ GPIO_RELAY_SIREN  = _int("EFWS_GPIO_RELAY",  27)
 GPIO_STATUS_LED   = _int("EFWS_GPIO_LED",    23)
 
 # ─── Anemometer RS485 ────────────────────────────────────────────────────────
-ANEMOMETER_PORT     = _opt("EFWS_ANEM_PORT", "/dev/ttyUSB0")
-ANEMOMETER_BAUDRATE = _int("EFWS_ANEM_BAUD", 4800)
-ANEMOMETER_SLAVE_ID = _int("EFWS_ANEM_SLAVE", 1)
-ANEMOMETER_REGISTER = int(_opt("EFWS_ANEM_REG", "0x0000"), 16)
+
+ANEMOMETER_PORT = _opt(
+    "EFWS_ANEM_PORT",
+    "/dev/ttyUSB0"
+)
+
+ANEMOMETER_SLAVE_ID = _int(
+    "EFWS_ANEM_SLAVE",
+    2
+)
+
+ANEMOMETER_BAUDRATE = _int(
+    "EFWS_ANEM_BAUD",
+    9600
+)
+
+ANEMOMETER_BYTESIZE = _int(
+    "EFWS_ANEM_BYTESIZE",
+    8
+)
+
+ANEMOMETER_STOPBITS = _int(
+    "EFWS_ANEM_STOPBITS",
+    1
+)
+
+ANEMOMETER_TIMEOUT = _float(
+    "EFWS_ANEM_TIMEOUT",
+    1.0
+)
+
+ANEMOMETER_REGISTER = int(
+    _opt(
+        "EFWS_ANEM_REGISTER",
+        "0x0000"
+    ),
+    16
+)
+
+ANEMOMETER_DECIMALS = _int(
+    "EFWS_ANEM_DECIMALS",
+    1
+)
+
+ANEMOMETER_FUNCTION_CODE = _int(
+    "EFWS_ANEM_FUNCTION",
+    3
+)
 
 # ─── A7670E / SIM7670E 4G LTE Cat-1 ──────────────────────────────────────────────────────────
 A7670E_AT_PORT  = _opt("EFWS_SIM_PORT", "/dev/ttyUSB2")
