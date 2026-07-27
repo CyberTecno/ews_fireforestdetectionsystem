@@ -1,78 +1,45 @@
-"""
-TEST — Gravity Rainfall Sensor (DFRobot SEN0575)
+#!/usr/bin/env python3
 
-Usage:
-
-python3 tests/test_rainfall.py
-"""
-
-import os
-import sys
 import time
-from datetime import datetime
-
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        )
-    )
-)
 
 from sensors.rainfall import RainfallSensor
 
-print("=" * 80)
-print(" TEST — Gravity Rainfall Sensor SEN0575")
-print("=" * 80)
 
-try:
+def main():
 
     sensor = RainfallSensor()
 
-except Exception as e:
+    print("=" * 60)
+    print("DFRobot Rainfall Sensor Test")
+    print("=" * 60)
 
-    print("Sensor gagal diinisialisasi")
-    print(e)
-    sys.exit(1)
+    if not sensor.begin():
+        print("❌ Rainfall sensor not detected.")
+        return
 
-print()
+    print("✅ Sensor detected")
+    print("Firmware :", sensor.firmware_version())
+    print()
 
-print("Tekan CTRL+C untuk berhenti.\n")
+    try:
 
-try:
+        while True:
 
-    while True:
+            data = sensor.read()
 
-        data = sensor.read()
+            print("=" * 60)
+            print(f"Total Rainfall : {data['rainfall_total_mm']:.4f} mm")
+            print(f"Last 1 Hour    : {data['rainfall_last_hour_mm']:.4f} mm")
+            print(f"Tip Counter    : {data['tip_counter']}")
+            print(f"Working Time   : {data['working_time_hours']:.2f} hours")
 
-        print("=" * 80)
+            time.sleep(2)
 
-        print(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-
-        print()
-
-        print(f"Total Rainfall   : {data['rainfall_total_mm']:.4f} mm")
-
-        print(f"1 Hour Rainfall  : {data['rainfall_1h_mm']:.4f} mm")
-
-        print(f"Rainfall Delta   : {data['rainfall_delta_mm']:.4f} mm")
-
-        print(f"Rain Rate        : {data['rain_rate_mmh']:.2f} mm/hour")
-
-        print(f"Tip Counter      : {data['raw_tip_count']}")
-
-        print(f"Working Time     : {data['working_time_hours']:.2f} hour")
-
-        if data["is_raining"]:
-            print("\nStatus           : 🌧️  RAINING")
-        else:
-            print("\nStatus           : ☀️  NO RAIN")
+    except KeyboardInterrupt:
 
         print()
+        print("Stopped by user.")
 
-        time.sleep(2)
 
-except KeyboardInterrupt:
-
-    print("\nProgram dihentikan.")
+if __name__ == "__main__":
+    main()
