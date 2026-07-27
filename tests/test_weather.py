@@ -43,6 +43,8 @@ def main():
         if rain.begin():
             print("✅ Rainfall sensor initialized")
             print(f"Firmware : {rain.firmware_version()}")
+
+            rain.set_rainfall_window(1)
         else:
             print("❌ Rainfall sensor not detected")
             return

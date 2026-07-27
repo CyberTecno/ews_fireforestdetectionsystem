@@ -157,7 +157,25 @@ class RainfallSensor:
             "little"
         ) / 10000.0
 
-    def rainfall(self):
+    def set_rainfall_window(self, hours=1):
+        """
+        Configure rainfall accumulation window.
+
+        Call ONCE after begin().
+        """
+
+        if not (1 <= hours <= 24):
+            raise ValueError("hours must be between 1 and 24")
+
+        self._write(
+            self.REG_RAIN_HOUR,
+            [hours]
+        )
+
+        # sama seperti library Arduino
+        time.sleep(0.10)
+
+    def window_rainfall(self):
         """
         Read rainfall for previously configured window.
 
@@ -231,7 +249,7 @@ class RainfallSensor:
             ),
 
             "rainfall_last_hour_mm": round(
-                self.rainfall(1),
+                self.window_rainfall(),
                 4
             ),
 
