@@ -1,13 +1,12 @@
 """
 DFRobot Gravity Rainfall Sensor (SEN0575)
-Native Raspberry Pi driver using smbus2.
+Native Raspberry Pi Driver
 
 Requires:
     pip install smbus2
-
-Author:
-    EFWS Native Driver
 """
+
+import time
 
 from config import settings
 
@@ -18,10 +17,9 @@ except ImportError:
 
 
 class RainfallSensor:
-    # I2C Address
+
     DEFAULT_ADDRESS = 0x1D
 
-    # Registers
     REG_PID = 0x00
     REG_VERSION = 0x0A
     REG_TIME_RAINFALL = 0x0C
@@ -35,9 +33,10 @@ class RainfallSensor:
     EXPECTED_VID = 0x3343
 
     def __init__(self, bus=None, address=None):
+
         if smbus2 is None:
             raise RuntimeError(
-                "smbus2 not installed. Run:\n"
+                "Please install smbus2\n"
                 "pip install smbus2"
             )
 
@@ -46,35 +45,66 @@ class RainfallSensor:
 
         self.bus = smbus2.SMBus(self.bus_num)
 
-    ##########################################################
-    # Low-level functions
-    ##########################################################
+    ############################################################
+    # LOW LEVEL
+    ############################################################
 
     def _read(self, register, length):
-        return self.bus.read_i2c_block_data(
+        """
+        Same sequence as Arduino:
+
+        beginTransmission()
+        write(register)
+        endTransmission()
+
+        requestFrom()
+        """
+
+        write = smbus2.i2c_msg.write(
             self.address,
-            register,
+            [register]
+        )
+
+        read = smbus2.i2c_msg.read(
+            self.address,
             length
         )
 
+        self.bus.i2c_rdwr(write)
+        self.bus.i2c_rdwr(read)
+
+        return list(read)
+
     def _write(self, register, data):
+        """
+        Same sequence as Arduino:
+
+        beginTransmission()
+        write(register)
+        write(data...)
+        endTransmission()
+
+        delay(100)
+        """
+
         if isinstance(data, int):
             data = [data]
 
-        self.bus.write_i2c_block_data(
+        msg = smbus2.i2c_msg.write(
             self.address,
-            register,
-            data
+            [register] + list(data)
         )
 
-    ##########################################################
-    # Device Information
-    ##########################################################
+        self.bus.i2c_rdwr(msg)
+
+        # Same delay as Arduino library
+        time.sleep(0.10)
+
+    ############################################################
+    # DEVICE
+    ############################################################
 
     def begin(self):
-        """
-        Verify PID/VID exactly like Arduino library.
-        """
 
         data = self._read(self.REG_PID, 4)
 
@@ -91,12 +121,16 @@ class RainfallSensor:
 
         return (
             pid == self.EXPECTED_PID
-            and vid == self.EXPECTED_VID
+            and
+            vid == self.EXPECTED_VID
         )
 
     def firmware_version(self):
 
-        data = self._read(self.REG_VERSION, 2)
+        data = self._read(
+            self.REG_VERSION,
+            2
+        )
 
         version = data[0] | (data[1] << 8)
 
@@ -104,70 +138,126 @@ class RainfallSensor:
             version >> 12,
             (version >> 8) & 0x0F,
             (version >> 4) & 0x0F,
-            version & 0x0F,
+            version & 0x0F
         )
 
-    ##########################################################
-    # Measurements
-    ##########################################################
+    ############################################################
+    # DATA
+    ############################################################
 
     def rainfall_total(self):
 
-        data = self._read(self.REG_CUMULATIVE_RAINFALL, 4)
+        data = self._read(
+            self.REG_CUMULATIVE_RAINFALL,
+            4
+        )
 
-        value = int.from_bytes(data, byteorder="little")
-
-        return round(value / 10000.0, 4)
+        return int.from_bytes(
+            data,
+            "little"
+        ) / 10000.0
 
     def rainfall(self, hours=1):
 
         if hours < 1 or hours > 24:
-            raise ValueError("hours must be 1-24")
+            raise ValueError("hours must be between 1 and 24")
 
-        self._write(self.REG_RAIN_HOUR, hours)
+        self._write(
+            self.REG_RAIN_HOUR,
+            [hours]
+        )
 
-        data = self._read(self.REG_TIME_RAINFALL, 4)
+        # sensor needs time after changing hour
+        time.sleep(0.10)
 
-        value = int.from_bytes(data, byteorder="little")
+        for _ in range(5):
 
-        return round(value / 10000.0, 4)
+            try:
+
+                data = self._read(
+                    self.REG_TIME_RAINFALL,
+                    4
+                )
+
+                return int.from_bytes(
+                    data,
+                    "little"
+                ) / 10000.0
+
+            except OSError:
+
+                time.sleep(0.05)
+
+        raise IOError(
+            "Unable to read rainfall after setting hour."
+        )
 
     def raw_tip_count(self):
 
-        data = self._read(self.REG_RAW_DATA, 4)
+        data = self._read(
+            self.REG_RAW_DATA,
+            4
+        )
 
-        return int.from_bytes(data, byteorder="little")
+        return int.from_bytes(
+            data,
+            "little"
+        )
 
     def working_time_hours(self):
 
-        data = self._read(self.REG_SYS_TIME, 2)
+        data = self._read(
+            self.REG_SYS_TIME,
+            2
+        )
 
-        minutes = int.from_bytes(data, byteorder="little")
+        minutes = int.from_bytes(
+            data,
+            "little"
+        )
 
-        return round(minutes / 60.0, 2)
+        return minutes / 60.0
 
-    ##########################################################
-    # Configuration
-    ##########################################################
+    ############################################################
+    # CONFIGURATION
+    ############################################################
 
     def set_accumulated_value(self, value):
 
         raw = int(value * 10000)
 
-        data = [
-            raw & 0xFF,
-            (raw >> 8) & 0xFF
-        ]
+        self._write(
+            self.REG_BASE_RAINFALL,
+            [
+                raw & 0xFF,
+                (raw >> 8) & 0xFF
+            ]
+        )
 
-        self._write(self.REG_BASE_RAINFALL, data)
-
-    ##########################################################
+    ############################################################
 
     def read(self):
 
         return {
-            "rainfall_total_mm": self.rainfall_total(),
-            "rainfall_last_hour_mm": self.rainfall(1),
+
+            "rainfall_total_mm": round(
+                self.rainfall_total(),
+                4
+            ),
+
+            "rainfall_last_hour_mm": round(
+                self.rainfall(1),
+                4
+            ),
+
             "tip_counter": self.raw_tip_count(),
-            "working_time_hours": self.working_time_hours(),
+
+            "working_time_hours": round(
+                self.working_time_hours(),
+                2
+            )
+
         }
+
+    def close(self):
+        self.bus.close()
