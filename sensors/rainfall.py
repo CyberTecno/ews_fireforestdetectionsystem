@@ -50,55 +50,50 @@ class RainfallSensor:
     ############################################################
 
     def _read(self, register, length):
-        """
-        Same sequence as Arduino:
 
-        beginTransmission()
-        write(register)
-        endTransmission()
+        for attempt in range(3):
 
-        requestFrom()
-        """
+            try:
+                write = smbus2.i2c_msg.write(
+                    self.address,
+                    [register]
+                )
 
-        write = smbus2.i2c_msg.write(
-            self.address,
-            [register]
-        )
+                read = smbus2.i2c_msg.read(
+                    self.address,
+                    length
+                )
 
-        read = smbus2.i2c_msg.read(
-            self.address,
-            length
-        )
+                self.bus.i2c_rdwr(write)
+                self.bus.i2c_rdwr(read)
 
-        self.bus.i2c_rdwr(write)
-        self.bus.i2c_rdwr(read)
+                return list(read)
 
-        return list(read)
+            except OSError:
+
+                time.sleep(0.05)
+
+        raise
 
     def _write(self, register, data):
-        """
-        Same sequence as Arduino:
-
-        beginTransmission()
-        write(register)
-        write(data...)
-        endTransmission()
-
-        delay(100)
-        """
-
         if isinstance(data, int):
             data = [data]
 
-        msg = smbus2.i2c_msg.write(
-            self.address,
-            [register] + list(data)
-        )
+        for attempt in range(3):
+            try:
+                msg = smbus2.i2c_msg.write(
+                    self.address,
+                    [register] + list(data)
+                )
 
-        self.bus.i2c_rdwr(msg)
+                self.bus.i2c_rdwr(msg)
+                time.sleep(0.10)
+                return
 
-        # Same delay as Arduino library
-        time.sleep(0.10)
+            except OSError:
+                time.sleep(0.05)
+
+        raise
 
     ############################################################
     # DEVICE

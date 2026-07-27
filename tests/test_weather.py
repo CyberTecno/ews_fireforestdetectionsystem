@@ -59,8 +59,14 @@ def main():
 
         while True:
 
-            bme_data = bme.read()
-            rain_data = rain.read()
+            try:
+                bme_data = bme.read()
+                rain_data = rain.read()
+
+            except Exception as e:
+                print(f"Read failed: {e}")
+                time.sleep(2)
+                continue
 
             print_separator()
 
@@ -87,13 +93,15 @@ def main():
 
             time.sleep(2)
 
-    except KeyboardInterrupt:
-
+    finally:
         print("\n")
         print_separator()
         print("Weather test stopped by user.")
         print_separator()
 
+        rain.close()
+        bme.close()
+        
 
 if __name__ == "__main__":
     main()

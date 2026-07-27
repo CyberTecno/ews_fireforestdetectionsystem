@@ -37,6 +37,9 @@ class BME280Sensor:
             return {"temperature_c": None, "humidity_percent": None,
                     "pressure_hpa": None, "error": str(e)}
 
+    def close(self):
+        self.bus.close()
+
 
 if __name__ == "__main__":
     import time
