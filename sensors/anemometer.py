@@ -49,10 +49,10 @@ class AnemometerSensor:
             }
 
         except Exception as e:
-            # Penanganan error lainnya
+            print("Wind Error :",repr(e))
             return {
-                "speed_ms": None,
-                "error": str(e)
+                "speed_ms":None,
+                "error":str(e)
             }
 
 # Blok untuk pengetesan langsung di dalam folder sensors
