@@ -93,14 +93,15 @@ def main():
 
             time.sleep(2)
 
-    finally:
-        print("\n")
-        print_separator()
-        print("Weather test stopped by user.")
-        print_separator()
+    except KeyboardInterrupt:
+        print("\nStopping weather test...")
 
+    finally:
         rain.close()
         bme.close()
+        print_separator()
+        print("Weather test stopped.")
+        print_separator()
         
 
 if __name__ == "__main__":

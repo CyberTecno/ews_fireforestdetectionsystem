@@ -1,27 +1,15 @@
 """
-Submersible Pressure Sensor
+Submersible Water Level Sensor
 Output : 4-20mA
 
-Configuration:
-- MCP3008
-- Raspberry Pi
-- WITHOUT Logic Level Converter
-- Burden resistor = 56.9 Ohm
-- ADC Reference = 3.3V
-
-Voltage produced:
-
-4mA
-0.228V
-
-20mA
-1.138V
-
-Safe for MCP3008.
+Uses:
+- gpiozero MCP3008 (same logic as the validated test)
+- Configuration from settings.py
 """
 
+from gpiozero import MCP3008
+
 from config import settings
-from sensors.mcp3008 import get_mcp3008
 
 
 class PressureWaterSensor:
@@ -72,98 +60,62 @@ class PressureWaterSensor:
             else settings.PRESSURE_RANGE_M
         )
 
-        self.adc = get_mcp3008()
-
-    # ------------------------------------------------------
-
-    def read_raw(self):
-
-        return self.adc.read_raw(self.channel)
-
-    # ------------------------------------------------------
-
-    def read_voltage(self):
-
-        raw = self.read_raw()
-
-        voltage = raw / 1023.0 * self.adc_ref
-
-        return round(voltage, 4)
-
-    # ------------------------------------------------------
-
-    def read_current_ma(self):
-
-        voltage = self.read_voltage()
-
-        current_ma = voltage / self.burden_ohm * 1000.0
-
-        return round(current_ma, 3)
-
-    # ------------------------------------------------------
-
-    def read_depth_m(self):
-
-        current = self.read_current_ma()
-
-        percent = (
-            current - self.min_ma
-        ) / (
-            self.max_ma - self.min_ma
-        )
-
-        percent = max(
-            0.0,
-            min(1.0, percent)
-        )
-
-        return round(
-            percent * self.range_m,
-            3
-        )
-
-    # ------------------------------------------------------
-
-    def read_pressure_bar(self):
-
-        depth = self.read_depth_m()
-
-        pressure = depth * 0.0980665
-
-        return round(
-            pressure,
-            4
-        )
+        self.adc = MCP3008(channel=self.channel)
 
     # ------------------------------------------------------
 
     def read(self):
 
-        raw = self.read_raw()
+        adc_value = self.adc.value
 
-        voltage = self.read_voltage()
+        voltage = adc_value * self.adc_ref
 
-        current = self.read_current_ma()
+        current_ma = (
+            voltage /
+            self.burden_ohm
+        ) * 1000.0
 
-        depth = self.read_depth_m()
+        fault = current_ma < 3.8
 
-        pressure = self.read_pressure_bar()
+        if fault:
+            depth_m = 0.0
+        else:
 
-        fault = current < 3.8
+            depth_mm = (
+                (
+                    current_ma - self.min_ma
+                )
+                /
+                (
+                    self.max_ma - self.min_ma
+                )
+            ) * (
+                self.range_m * 1000
+            )
+
+            depth_mm = max(
+                0.0,
+                min(
+                    self.range_m * 1000,
+                    depth_mm
+                )
+            )
+
+            depth_m = depth_mm / 1000.0
+
+        pressure_bar = depth_m * 0.0980665
 
         return {
 
-            "adc_raw": raw,
+            "voltage": round(voltage, 4),
 
-            "voltage": voltage,
+            "current_ma": round(current_ma, 4),
 
-            "current_ma": current,
+            "depth_m": round(depth_m, 4),
 
-            "depth_m": depth,
+            "pressure_bar": round(pressure_bar, 4),
 
-            "pressure_bar": pressure,
-
-            "fault_open_loop": fault
+            "fault_open_loop": fault,
 
         }
 

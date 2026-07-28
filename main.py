@@ -47,15 +47,24 @@ logger = logging.getLogger("efws.main")
 
 
 # ─── smokeLevel calculator ────────────────────────────────────────
-def _calc_smoke_level(mq2_ppm: float, mq135_ppm: float) -> float:
-    """
-    Gabungkan MQ-2 dan MQ-135 menjadi satu persentase 0-100%.
-    Formula: (mq2/MQ2_CRIT * W_MQ2 + mq135/MQ135_CRIT * W_MQ135) * 100
-    """
-    n2   = min(mq2_ppm   / settings.SMOKE_MQ2_CRIT_PPM,   1.5)
-    n135 = min(mq135_ppm / settings.SMOKE_MQ135_CRIT_PPM, 1.5)
-    raw  = (n2 * settings.SMOKE_WEIGHT_MQ2 + n135 * settings.SMOKE_WEIGHT_MQ135) * 100
-    return round(min(raw, 100.0), 2)
+def _calc_smoke_level(mq2_ppm, mq135_ppm):
+
+    if mq2_ppm is None and mq135_ppm is None:
+        return None
+
+    mq2 = 0 if mq2_ppm is None else mq2_ppm
+    mq135 = 0 if mq135_ppm is None else mq135_ppm
+
+    n2 = min(mq2 / settings.SMOKE_MQ2_CRIT_PPM,1.5)
+    n135 = min(mq135 / settings.SMOKE_MQ135_CRIT_PPM,1.5)
+
+    raw = (
+        n2*settings.SMOKE_WEIGHT_MQ2
+        +
+        n135*settings.SMOKE_WEIGHT_MQ135
+    )*100
+
+    return round(min(raw,100),2)
 
 
 # ─── SIM factory (auto-detect A7670E atau SIM7600) ───────────────
@@ -289,8 +298,8 @@ class EFWS:
         t = resolve_active_thresholds(self.hardcoded_thresholds, self.api.remote_config)
 
         smoke_pct = _calc_smoke_level(
-            data["mq2"].get("ppm", 0),
-            data["mq135"].get("ppm", 0),
+            data["mq2"].get("ppm", None),
+            data["mq135"].get("ppm", None),
         )
 
         surface = data["soil"].get("surface", {}).get("moisture_percent")
@@ -325,11 +334,9 @@ class EFWS:
         pressure = data.get("pressure", {})
         battery  = data.get("battery", {})
 
-        timestamp = (
-            datetime.now(ZoneInfo("Asia/Jakarta"))
-            .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
-            + "Z"
-        )
+        timestamp = datetime.now(
+            ZoneInfo("Asia/Jakarta")
+        ).isoformat(timespec="milliseconds")
 
         return {
             "deviceId": settings.DEVICE_ID,
@@ -347,7 +354,7 @@ class EFWS:
                     },
                     "windSpeed": wind.get("speed_ms") if wind.get("speed_ms") is not None else 0,
                     "batteryLevel": battery.get("percent"),
-                    "flameDetected": False,
+                    "flame": False,
                 }
             ],
         }
