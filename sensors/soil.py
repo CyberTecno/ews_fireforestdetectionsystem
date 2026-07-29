@@ -18,12 +18,12 @@ class SoilMoistureSensor:
         channel_deep=None,
 
         # Kalibrasi Surface
-        dry_raw_surface=900,
-        wet_raw_surface=380,
+        dry_raw_surface=850,
+        wet_raw_surface=800,
 
         # Kalibrasi Deep
-        dry_raw_deep=920,
-        wet_raw_deep=410,
+        dry_raw_deep=850,
+        wet_raw_deep=825,
     ):
 
         self.ch_surface = (

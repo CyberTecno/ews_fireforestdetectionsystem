@@ -39,7 +39,7 @@ from config import settings
 logger = logging.getLogger("efws.sim_detector")
 
 CACHE_FILE = Path(__file__).parent.parent / ".sim_cache"
-SCAN_PORTS = ["/dev/ttyUSB2", "/dev/ttyUSB3", "/dev/ttyUSB1", "/dev/ttyUSB0"]
+SCAN_PORTS = ["/dev/ttyUSB2", "/dev/ttyUSB3", "/dev/ttyUSB1"]
 BAUD       = 115200
 TIMEOUT    = 2
 

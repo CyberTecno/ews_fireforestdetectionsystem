@@ -162,7 +162,7 @@ class EFWS:
         self.sensors, self.alarm  = _load_sensors_and_alarm()
         self.api                  = APIPublisher()
         self.db                   = DBManager()
-        self.sim                  = _load_sim()   # auto-detect A7670E atau SIM7600
+        self.sim                  = None #_load_sim()   # auto-detect A7670E atau SIM7600
 
         self._critical_streak = 0
         self._stop_flag = threading.Event()
@@ -270,6 +270,7 @@ class EFWS:
         for key, sensor in self.sensors.items():
             try:
                 data[key] = sensor.read()
+                print(key, "=>", data[key])
             except Exception as e:
                 logger.error("Sensor '%s' read error: %s", key, e)
                 data[key] = {"error": str(e)}

@@ -34,27 +34,22 @@ class AnemometerSensor:
 
     def read(self):
 
-        try:
-            # Mengambil data dari sensor
-            speed = self.read_wind_speed()
-            return {
-                "speed_ms": speed
-            }
+        last_error = None
+        for _ in range(3):
+            try:
+                speed = self.read_wind_speed()
+                return {
+                    "speed_ms": speed
+                }
+            except minimalmodbus.NoResponseError as e:
+                last_error = e
+                time.sleep(0.2)
 
-        except minimalmodbus.NoResponseError:
-            # Penanganan khusus jika sensor mati / kabel terputus
-            return {
-                "speed_ms": None,
-                "error": "No response from sensor"
-            }
-
-        except Exception as e:
-            print("Wind Error :",repr(e))
-            return {
-                "speed_ms":None,
-                "error":str(e)
-            }
-
+        return {
+            "speed_ms": None,
+            "error": str(last_error)
+    }
+      
 # Blok untuk pengetesan langsung di dalam folder sensors
 if __name__ == "__main__":
     sensor = AnemometerSensor()

@@ -3,10 +3,10 @@ import time
 
 # Kita asumsikan kabel kuning/hitam masuk ke channel 0 (CH0) di MCP3008
 # Jika Anda colok ke CH1, ganti angka 0 menjadi 1 di bawah ini
-adc = MCP3008(channel=4)
+adc = MCP3008(channel=0)
 
 # Masukkan nilai resistor yang Anda gunakan (misal 150 atau 100)
-RESISTOR_OHM = 100
+RESISTOR_OHM = 100  
 VREF = 3.3 # Tegangan referensi MCP3008 (standar Raspberry Pi)
 
 print("=== TEST SENSOR AIR (4-20mA) ===")
