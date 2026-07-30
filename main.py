@@ -21,9 +21,7 @@ import threading
 import subprocess
 import traceback
 from pathlib import Path
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-
+from datetime import UTC, datetime
 from config import settings
 from config.threshold_resolver import resolve_active_thresholds
 from database.db_manager import DBManager
@@ -335,9 +333,11 @@ class EFWS:
         pressure = data.get("pressure", {})
         battery  = data.get("battery", {})
 
-        timestamp = datetime.now(
-            ZoneInfo("Asia/Jakarta")
-        ).isoformat(timespec="milliseconds")
+        timestamp = (
+            datetime.now(UTC)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
+        )
 
         return {
             "deviceId": settings.DEVICE_ID,

@@ -1,46 +1,37 @@
-"""
-Modul Sensor Tegangan DC 0-25V — monitoring baterai (voltage divider bawaan modul).
-Lewat MCP3008 CH5 via Logic Level Converter yang sama dengan sensor analog lain.
+from gpiozero import MCP3008
+import time
 
-Input : terhubung langsung ke terminal Battery+ dan Battery-
-Output: pin S → 0-5V proporsional terhadap tegangan input (0-25V)
+# 1. Inisialisasi MCP3008
+# Menggunakan channel 0 (karena sensor dicolok ke CH0 / Pin 1)
+adc = MCP3008(channel=0)
 
-Kalkulasi:
-  V_battery = (raw / 1023) × BATTERY_SENSOR_MAX_V
-  Karena LLC scale linear (HV=5V↔LV=3.3V), faktor LLC saling meniadakan:
-  raw/1023 = V_lv/3.3 = (V_s × 3.3/5) / 3.3 = V_s/5 = V_battery/25
-  → V_battery = raw × 25 / 1023
-"""
-from config import settings
-from sensors.mcp3008 import get_mcp3008
+# 2. Konstanta Perhitungan
+# Tegangan referensi MCP3008 (kita hubungkan ke 3.3V Pi)
+VREF = 3.3 
 
+# Rasio dari sensor pembagi tegangan (30k dan 7.5k = rasio 5)
+RASIO_SENSOR = 5.0 
 
-class BatterySensor:
-    def __init__(self, channel=None, sensor_max_v=None, batt_max_v=None, batt_min_v=None):
-        self.channel      = channel      if channel      is not None else settings.ADC_CHANNEL_BATTERY
-        self.sensor_max_v = sensor_max_v if sensor_max_v is not None else settings.BATTERY_SENSOR_MAX_V
-        self.batt_max_v   = batt_max_v   if batt_max_v   is not None else settings.BATTERY_MAX_V
-        self.batt_min_v   = batt_min_v   if batt_min_v   is not None else settings.BATTERY_MIN_V
-        self.adc          = get_mcp3008()
+print("Membaca tegangan 14.4V via MCP3008...")
+print("Tekan Ctrl+C untuk berhenti.\n")
 
-    def read_voltage(self) -> float:
-        raw = self.adc.read_raw(self.channel)
-        return round(raw / 1023.0 * self.sensor_max_v, 3)
-
-    def read_percent(self) -> float:
-        v    = self.read_voltage()
-        span = self.batt_max_v - self.batt_min_v
-        pct  = (v - self.batt_min_v) / span * 100
-        return round(max(0.0, min(100.0, pct)), 1)
-
-    def read(self) -> dict:
-        v = self.read_voltage()
-        return {"voltage": v, "percent": self.read_percent()}
-
-
-if __name__ == "__main__":
-    import time
-    sensor = BatterySensor()
+try:
     while True:
-        print(sensor.read())
-        time.sleep(2)
+        # adc.value mengembalikan nilai rasio dari 0.0 hingga 1.0
+        # (0.0 = 0V, 1.0 = sama dengan VREF atau 3.3V)
+        nilai_mentah = adc.value
+        
+        # Hitung tegangan yang masuk ke pin CH0
+        tegangan_pin = nilai_mentah * VREF
+        
+        # Hitung tegangan asli power supply (dikalikan rasio modul sensor)
+        tegangan_asli = tegangan_pin * RASIO_SENSOR
+        
+        # Print hasil
+        print(f"Tegangan Terbaca: {tegangan_asli:.2f} V (Tegangan Pin: {tegangan_pin:.2f} V)")
+        
+        # Jeda setengah detik
+        time.sleep(0.5)
+
+except KeyboardInterrupt:
+    print("\nProgram dihentikan.")
