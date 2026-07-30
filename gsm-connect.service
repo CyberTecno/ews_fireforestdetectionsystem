@@ -1,11 +1,22 @@
 [Unit]
-Description=EWS GSM Auto Connect
-After=NetworkManager.service ModemManager.service
-Requires=NetworkManager.service ModemManager.service
+Description=EFWS SIM7600 IoT Primary Connection
+After=ModemManager.service NetworkManager.service
+Wants=ModemManager.service NetworkManager.service
 
 [Service]
 Type=oneshot
+
+User=root
+Group=root
+
 ExecStart=/home/uwfadmin/ews/scripts/gsm_connect.sh
+
+TimeoutStartSec=120
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ews-iot-gsm
+
 RemainAfterExit=yes
 
 [Install]
