@@ -197,6 +197,12 @@ class EFWS:
         # sampling loop). Location & Heartbeat TIDAK PERNAH membaca ini --
         # cuma Telemetry Publisher yang membaca untuk memilih interval.
         self._emergency = threading.Event()
+
+        # Menandakan bahwa Telemetry Publisher harus melakukan
+        # Immediate Emergency Send (sekali saja saat transisi
+        # NORMAL -> EMERGENCY).
+        self._emergency_immediate_send = threading.Event()
+
         # Dipakai sampling loop untuk membangunkan Telemetry Publisher
         # SEKETIKA saat baru masuk Emergency Mode, tanpa menunggu sisa
         # waktu tunggu interval normal (30 menit) habis dulu.
@@ -340,14 +346,36 @@ class EFWS:
                 # sebentar lagi daripada kirim payload kosong.
                 continue
 
+            immediate_send = self._emergency_immediate_send.is_set()
+            if immediate_send:
+                self._emergency_immediate_send.clear()
+
             try:
                 payload = self._build_telemetry_payload(data, smoke_pct)
                 # Simpan ke DB lokal SEBELUM dikirim (sumber kebenaran lokal,
                 # dan untuk audit -- full_payload berisi PERSIS body yang
                 # dikirim ke API). Dibersihkan otomatis oleh _retention_loop.
                 self.db.log_reading(data, payload)
-                mode = "EMERGENCY" if self._emergency.is_set() else "rutin"
-                logger.warning("📡 [Telemetry Publisher] kirim (%s, interval=%ds)", mode, interval)
+
+                if immediate_send:
+                    logger.warning(
+                        "[Telemetry Publisher] Immediate Emergency Send"
+                    )
+
+                elif self._emergency.is_set():
+                    logger.warning(
+                        "[Telemetry Publisher] Emergency Scheduled Send "
+                        "(interval=%ds)",
+                        settings.EMERGENCY_TELEMETRY_INTERVAL_SEC,
+                    )
+
+                else:
+                    logger.info(
+                        "[Telemetry Publisher] Normal Scheduled Send "
+                        "(interval=%ds)",
+                        settings.TELEMETRY_INTERVAL_SEC,
+                    )
+                    
                 self.api.send_telemetry(payload, db=self.db)
 
                 pending = self.db.count_pending_queue()
@@ -618,6 +646,8 @@ class EFWS:
                            "MASUK EMERGENCY MODE, Telemetry Publisher dibangunkan sekarang.",
                            self._critical_streak, triggered)
             self._emergency.set()
+            # Immediate telemetry hanya SATU KALI
+            self._emergency_immediate_send.set()
             self._telemetry_wake.set()  # bangunkan Telemetry Publisher SEKARANG, jangan tunggu interval lama habis
         elif not now_emergency and was_emergency:
             logger.warning("🟢 Semua nilai kembali NORMAL -- KELUAR EMERGENCY MODE, "
