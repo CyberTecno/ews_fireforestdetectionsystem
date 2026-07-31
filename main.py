@@ -205,6 +205,7 @@ class EFWS:
         # dibaca oleh Telemetry Publisher tiap kali dia mau kirim (bukan
         # baca sensor sendiri, supaya "sensor sampling" tetap satu-satunya
         # yang menyentuh hardware sensor).
+        self._startup_telemetry_sent = False
         self._data_lock = threading.Lock()
         self._latest_data = None
         self._latest_smoke = None
@@ -706,6 +707,9 @@ class EFWS:
                 with self._data_lock:
                     self._latest_data = data
                     self._latest_smoke = smoke_pct
+                    if not self._startup_telemetry_sent:
+                        self._startup_telemetry_sent = True
+                        self._telemetry_wake.set()
 
                 # 4) Sirine lokal + status Emergency Mode (single source of
                 #    truth untuk Telemetry Publisher) -- selalu dievaluasi
