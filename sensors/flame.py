@@ -1,50 +1,48 @@
 """
-IR Flame Sensor 4-wire (VCC, GND, DO, AO).
-  - DO (digital out): aktif-LOW pada kebanyakan modul ini (LOW = api terdeteksi).
-    Sinyal DO 5V WAJIB lewat logic level converter sebelum masuk GPIO Pi (3.3V).
-  - AO (analog out, opsional): bisa dibaca lewat MCP3008 channel terpisah
-    untuk mengetahui INTENSITAS api, bukan cuma deteksi ya/tidak.
-    Sinyal AO 5V juga WAJIB lewat logic level converter sebelum ke MCP3008.
+IR Flame Sensor -- dibaca via AO (analog) di MCP3008 channel TERAKHIR (CH7).
 
-Set read_analog=False jika AO tidak Anda kabel (cukup pakai DO saja).
+Keputusan user: sensor ini dikabel HANYA lewat AO ke MCP3008, BUKAN lewat
+GPIO digital DO -- jadi tidak perlu RPi.GPIO/level converter tambahan untuk
+sensor ini, cukup lewat jalur analog yang sama seperti sensor MCP3008
+lainnya (get_mcp3008()).
+
+============================================================
+KALIBRASI WAJIB SEBELUM DIPASANG DI LAPANGAN
+============================================================
+FLAME_AO_THRESHOLD_V di config/settings.py baru PERKIRAAN AWAL (setengah
+VREF, 1.65V), BELUM diukur dari unit fisik Anda. Cara kalibrasi:
+  1. Jalankan file ini langsung (`python sensors/flame.py`) di kondisi
+     normal (tidak ada api) -- catat nilai "AO" yang tercetak.
+  2. Dekatkan sumber api kecil yang aman (korek api / lilin, jarak wajar,
+     JANGAN sampai merusak sensor) -- catat nilai "AO" yang tercetak.
+  3. Set EFWS_FLAME_AO_THRESHOLD_V di .env ke nilai di antara keduanya.
+  4. Kalau AO TURUN saat ada api (umum untuk banyak modul comparator IR),
+     biarkan trigger_below=True (default). Kalau AO malah NAIK saat ada
+     api pada modul Anda, panggil FlameSensor(trigger_below=False).
 """
 from config import settings
-
-try:
-    import RPi.GPIO as GPIO
-except ImportError:
-    GPIO = None
+from sensors.mcp3008 import get_mcp3008
 
 
 class FlameSensor:
-    def __init__(self, pin=None, active_low=True, read_analog=False, analog_channel=None):
-        self.pin = pin if pin is not None else settings.GPIO_FLAME_SENSOR
-        self.active_low = active_low
-        self.read_analog = read_analog
-
-        if GPIO is None:
-            raise RuntimeError("RPi.GPIO tidak tersedia - jalankan ini di Raspberry Pi")
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(self.pin, GPIO.IN, pull_up_down=GPIO.PUD_UP if active_low else GPIO.PUD_DOWN)
-
-        self.adc = None
-        if self.read_analog:
-            from sensors.mcp3008 import get_mcp3008
-            self.adc = get_mcp3008()
-            self.analog_channel = analog_channel if analog_channel is not None else settings.ADC_CHANNEL_FLAME_AO
+    def __init__(self, channel=None, threshold_v=None, trigger_below=True):
+        self.channel     = channel     if channel     is not None else settings.ADC_CHANNEL_FLAME_AO
+        self.threshold_v = threshold_v if threshold_v is not None else settings.FLAME_AO_THRESHOLD_V
+        self.trigger_below = trigger_below
+        self.adc = get_mcp3008()
 
     def read(self) -> dict:
-        raw = GPIO.input(self.pin)
-        detected = (raw == GPIO.LOW) if self.active_low else (raw == GPIO.HIGH)
-        result = {"raw": raw, "flame_detected": bool(detected)}
-        if self.read_analog and self.adc:
-            result["analog_voltage"] = self.adc.read_voltage(self.analog_channel)
-        return result
+        voltage = self.adc.read_voltage(self.channel)
+        detected = (voltage < self.threshold_v) if self.trigger_below else (voltage > self.threshold_v)
+        return {"analog_voltage": voltage, "flame_detected": bool(detected)}
 
 
 if __name__ == "__main__":
     import time
-    sensor = FlameSensor(read_analog=True)
+    sensor = FlameSensor()
+    print(f"=== EFWS Flame Sensor Test (CH{sensor.channel}, threshold={sensor.threshold_v}V) ===")
+    print("Belum dikalibrasi -- gunakan angka AO di bawah untuk menentukan threshold yang benar.\n")
     while True:
-        print(sensor.read())
+        r = sensor.read()
+        print(f"AO={r['analog_voltage']:.3f}V | flame_detected={r['flame_detected']}")
         time.sleep(1)

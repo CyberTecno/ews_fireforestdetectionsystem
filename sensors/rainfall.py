@@ -45,6 +45,18 @@ class RainfallSensor:
 
         self.bus = smbus2.SMBus(self.bus_num)
 
+        # Validasi identitas chip (PID/VID) SEKARANG, saat init -- bukan diam-diam
+        # menerima data dari alamat I2C manapun yang kebetulan nyambung di sana.
+        # Kalau device salah/tidak ada, __init__ ini raise (integrasi dengan
+        # NullSensor fallback di main.py sama seperti sensor lain).
+        if not self.begin():
+            self.bus.close()
+            raise RuntimeError(
+                f"Rainfall sensor: PID/VID tidak cocok di alamat I2C "
+                f"0x{self.address:02X} bus {self.bus_num} -- device salah atau "
+                f"belum terpasang."
+            )
+
     ############################################################
     # LOW LEVEL
     ############################################################
@@ -258,4 +270,4 @@ class RainfallSensor:
         }
 
     def close(self):
-        self.bus.close()
+        self.bus.close()

@@ -4,7 +4,8 @@ Hardware final:
 **Raspberry Pi 4 · MCP3008 (SPI ADC 8-ch) · 1x Logic Level Converter (min. 6-channel)
 · MQ-2 · MQ-135 · BME280 (I2C) · Soil Probe Surface · Soil Probe Deep
 · Submersible Pressure Sensor (loop 4-20mA) · Modul Sensor Tegangan DC 0-25V (baterai)
-· RS485 Anemometer · A7670E ATAU SIM7600 (auto-detect, hanya salah satu dipasang)
+· RS485 Anemometer · Wind Direction (UART GPIO14/15)
+· A7670E ATAU SIM7600 (auto-detect, hanya salah satu dipasang)
 · Relay 5V · Sirine 12V**
 
 > Tidak ada flame sensor di hardware ini. Tidak ada buzzer terpisah — cukup
@@ -25,10 +26,13 @@ Hardware final:
 | SPI CE0  (MCP3008) | GPIO8  | Pin 24 | Chip Select |
 | I2C SDA (BME280)   | GPIO2  | Pin 3  | Data I2C |
 | I2C SCL (BME280)   | GPIO3  | Pin 5  | Clock I2C |
+| UART RXD (Wind Direction) | GPIO14 | Pin 8  | Terima dari TX sensor (kuning) |
+| UART TXD (Wind Direction) | GPIO15 | Pin 10 | Kirim ke RX sensor (hijau) — jarang dipakai, sensor ini one-way |
+| Flame Sensor AO (analog) | MCP3008 CH7 | — | LLC HV-7 (channel terakhir yang kosong). **Threshold voltase belum dikalibrasi ke unit fisik** — lihat `sensors/flame.py`. TIDAK pakai GPIO/DO. |
 | Relay Sirine (output) | GPIO27 | Pin 13 | Ke IN relay 5V |
 | Status LED (output, opsional) | GPIO23 | Pin 16 | Indikator heartbeat |
 | 5V Rail | — | Pin 2 & 4 | Power LLC HV (jangan dari sini kalau arus besar) |
-| 3.3V Rail | — | Pin 1 & 17 | Power LLC LV, MCP3008 VDD/VREF, BME280 |
+| 3.3V Rail | — | Pin 1 & 17 | Power LLC LV, MCP3008 VDD/VREF, BME280, Wind Direction |
 | GND | — | Pin 6, 9, 14, 20, 25, 30, 34, 39 | Ground bersama |
 
 Aktifkan interface:
@@ -36,7 +40,11 @@ Aktifkan interface:
 sudo raspi-config
 # Interface Options → SPI → Yes
 # Interface Options → I2C → Yes
+# Interface Options → Serial Port → login shell lewat serial: No, hardware serial: Yes
 ```
+Lalu tambahkan `dtoverlay=disable-bt` di `/boot/config.txt` dan
+`sudo systemctl disable hciuart` — detail & alasannya di bagian
+"Wind Direction" pada §5 di bawah.
 
 ---
 
@@ -207,6 +215,31 @@ Formula konversi ada di `sensors/battery.py`. Kalibrasi `BATTERY_MAX_V` /
 | GND | GND bersama |
 
 USB-RS485 → port USB Pi → muncul sebagai `/dev/ttyUSB0`. **Tidak perlu LLC.**
+
+### Wind Direction — UART (GPIO14/15), BUKAN lewat MCP3008/LLC
+
+| Kabel | Hubung ke |
+|-------|-----------|
+| Merah (VCC) | 3.3V (pin 1 atau 17) |
+| Hitam (GND) | GND |
+| Kuning (TX sensor) | GPIO14 / pin 8 (RXD Pi) |
+| Hijau (RX sensor) | GPIO15 / pin 10 (TXD Pi) |
+
+Protokol: baris teks `*<kode>#` lewat UART software `/dev/serial0`, kode
+1-8 = N/NE/E/SE/S/SW/W/NW. Baudrate default 9600 (`EFWS_WIND_DIR_BAUD`).
+
+> ⚠️ **Wajib dicek sebelum pasang:** di Raspberry Pi 4, GPIO14/15 secara
+> default dipakai Bluetooth (mini-UART yang baudrate-nya ikut ngambang
+> mengikuti frekuensi VPU). Supaya sensor ini stabil:
+> 1. `sudo raspi-config` → Interface Options → Serial Port → login shell
+>    lewat serial: **No**, hardware serial port: **Yes**.
+> 2. Tambahkan `dtoverlay=disable-bt` di `/boot/config.txt`, lalu
+>    `sudo systemctl disable hciuart`, lalu reboot.
+> 3. Setelah reboot, `/dev/serial0` akan otomatis nyambung ke PL011 (full
+>    UART) yang stabil, bukan mini-UART.
+>
+> Kalau langkah ini belum dilakukan, sensor bisa saja "kelihatan" jalan
+> tapi datanya acak/putus-putus.
 
 ### A7670E ATAU SIM7600 (pilih salah satu)
 

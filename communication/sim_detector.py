@@ -110,10 +110,19 @@ def scan_ports() -> "dict | None":
     Scan semua kandidat port serial, return dict {port, module} saat ketemu,
     atau None kalau tidak ada yang merespons.
     """
+    # Port yang SUDAH DIPASTIKAN dipakai peripheral lain (bukan modem) -- JANGAN
+    # ikut discan. Kalau ikut discan, _identify_port() akan buka port itu dan
+    # menembakkan "AT"/"ATI" ke bus-nya, yang akan mengacaukan komunikasi
+    # peripheral asli di port tsb (terbukti: anemometer RS485 di ANEMOMETER_PORT
+    # kehilangan data tiap kali _load_sim()/scan_ports() jalan, karena port yang
+    # sama ikut ter-scan sebagai kandidat modem).
+    RESERVED_PORTS = {settings.ANEMOMETER_PORT}
+
     # Gabungkan dengan hasil glob supaya dapat port yang tidak ada di SCAN_PORTS
-    candidates = list(dict.fromkeys(
-        SCAN_PORTS + sorted(glob.glob("/dev/ttyUSB*"))
-    ))
+    candidates = [
+        p for p in dict.fromkeys(SCAN_PORTS + sorted(glob.glob("/dev/ttyUSB*")))
+        if p not in RESERVED_PORTS
+    ]
 
     logger.info("🔍 Scanning %d port kandidat untuk modul SIM...", len(candidates))
     for port in candidates:

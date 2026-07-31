@@ -64,6 +64,15 @@ DEVICE_LOCATION = {
     "lon": _float("EFWS_LON", 0.0),
 }
 
+# ─── GPS acquisition (Location Publisher) ──────────────────────────────────
+# Dikonfirmasi dari pengalaman lapangan user: cold-fix GPS lewat modul
+# A7670E/SIM7600 biasanya butuh 2 percobaan, masing-masing 2-5 menit. Jadi
+# defaultnya BUKAN satu percobaan singkat -- 2 percobaan @ 4 menit (tengah
+# rentang 2-5 menit), baru dianggap gagal kalau keduanya tidak fix.
+GPS_FIX_ATTEMPTS    = _int("EFWS_GPS_FIX_ATTEMPTS",    2)
+GPS_TIMEOUT_SEC     = _int("EFWS_GPS_TIMEOUT_SEC",     240)  # detik PER percobaan (4 menit)
+GPS_RETRY_DELAY_SEC = _int("EFWS_GPS_RETRY_DELAY_SEC", 10)   # jeda sebelum percobaan berikutnya
+
 # ─── Mode operasi ────────────────────────────────────────────────────────────
 RUN_MODE = _opt("EFWS_RUN_MODE", "mock")
 
@@ -100,25 +109,41 @@ ADC_CHANNEL_BATTERY         = _int("EFWS_ADC_BATTERY",       5)   # LLC HV-6 (vo
 # CH6-CH7 tidak dikabel — spare fisik di MCP3008
 
 # ─── Gravity Rainfall Sensor (DFRobot SEN0575) ─────────────────────────────
-I2C_BUS = 1
-# DFRobot SEN0575
+# (I2C_BUS dipakai bersama dengan BME280 -- lihat definisi di atas, TIDAK
+# didefinisikan ulang di sini lagi. Sebelumnya ada baris "I2C_BUS = 1" di
+# sini yang diam-diam menimpa nilai EFWS_I2C_BUS dari .env -- sudah dihapus.)
 RAINFALL_I2C_ADDRESS = 0x1D
 # Interval pembacaan (detik)
 RAINFALL_READ_INTERVAL = 2
 
-# ─── Battery — Modul Sensor Tegangan DC 0-25V ────────────────────────────────
-BATTERY_SENSOR_MAX_V = _float("EFWS_BATTERY_SENSOR_MAX_V", 25.0)  # max input modul sensor (V)
+# ─── Battery — Modul Sensor Tegangan DC 0-25V (voltage divider 5:1) ────────
+# DIKONFIRMASI dari datasheet resmi modul ini (osoyoo.com/2024/09/08/lesson-13-
+# voltage-sensor-for-raspberry-pi/): rasio pembagi tegangan modul = 1/5 TETAP
+# (bukan tergantung VREF). Modul ini punya batas input aman "less than 16.5V"
+# ketika ADC-nya diberi VREF 3.3V (3.3 x 5 = 16.5V) -- BUKAN 25V seperti nilai
+# lama di sini. Nilai lama (25.0) salah dan akan menghasilkan V_battery yang
+# under-read sekitar 34%. Kalau modul fisik Anda beda merek/rasio, sesuaikan
+# lewat EFWS_BATTERY_SENSOR_MAX_V.
+BATTERY_SENSOR_MAX_V = _float("EFWS_BATTERY_SENSOR_MAX_V", 16.5)  # max input modul sensor (V) @ VREF 3.3V, rasio 1:5
 BATTERY_MAX_V        = _float("EFWS_BATTERY_MAX_V",        12.6)  # tegangan baterai penuh (V)
 BATTERY_MIN_V        = _float("EFWS_BATTERY_MIN_V",         9.0)  # tegangan baterai kosong (V)
 
-# ─── Submersible Pressure Sensor — loop 4-20mA ──────────────────────────────
-# Sensor loop-powered 2-kabel, dibaca via burden resistor presisi lalu LLC
-# (lihat sensors/pressure.py untuk detail kalkulasi & wiring).
+# ─── Submersible / Pressure Water Level Sensor — loop 4-20mA ───────────────
+# CATATAN: submersible.py (script berdiri sendiri, pakai channel & rumus yang
+# sama) sudah DIGABUNG ke sini / dihapus -- pressure.py adalah satu-satunya
+# implementasi untuk sensor ini sekarang (lihat sensors/pressure.py).
 PRESSURE_BURDEN_OHM = _float("EFWS_PRESSURE_BURDEN_OHM",     100.0)  # 4mA→1V, 20mA→5V
 PRESSURE_MIN_MA     = _float("EFWS_PRESSURE_MIN_MA",       4.0)
 PRESSURE_MAX_MA     = _float("EFWS_PRESSURE_MAX_MA",      20.0)
 PRESSURE_RANGE_M    = _float("EFWS_PRESSURE_RANGE_M",      3.0)  # rentang penuh sensor, sesuaikan datasheet
-PRESSURE_ADC_REF_VOLTAGE = _float("EFWS_PRESSURE_ADC_REF_VOLTAGE",3.3)
+
+# ─── Flame Sensor (IR, dibaca via AO/analog di MCP3008 channel TERAKHIR) ───
+# Keputusan user: pakai AO lewat MCP3008 CH7 (channel terakhir yang masih
+# kosong), BUKAN lewat GPIO digital DO. Threshold voltase BELUM dikalibrasi
+# ke unit fisik -- lihat comment kalibrasi di sensors/flame.py sebelum
+# dipakai di lapangan.
+ADC_CHANNEL_FLAME_AO   = _int("EFWS_ADC_FLAME_AO", 7)          # CH6 spare, CH7 = flame (terakhir)
+FLAME_AO_THRESHOLD_V   = _float("EFWS_FLAME_AO_THRESHOLD_V", 1.65)  # PERKIRAAN AWAL (setengah VREF) -- WAJIB dikalibrasi ulang di lapangan
 
 # ─── smokeLevel: gabungan MQ-2 + MQ-135 → persentase 0-100% ────────────────
 # Formula: smokeLevel = (mq2_ppm/MQ2_CRIT * W_MQ2 + mq135_ppm/MQ135_CRIT * W_MQ135) * 100
@@ -132,6 +157,15 @@ SMOKE_CRITICAL_PCT   = _float("EFWS_SMOKE_CRIT",         70.0)
 
 GPIO_RELAY_SIREN  = _int("EFWS_GPIO_RELAY",  27)
 GPIO_STATUS_LED   = _int("EFWS_GPIO_LED",    23)
+
+# ─── Wind Direction Sensor -- UART GPIO14(TXD)/GPIO15(RXD), pin 8/10 ────────
+# VCC(merah)->3.3V, GND(hitam)->GND, TX(kuning)->GPIO14/pin8, RX(hijau)->GPIO15/pin10.
+# PENTING: pastikan Bluetooth di-nonaktifkan (dtoverlay=disable-bt) dan
+# console serial dimatikan di raspi-config, atau port ini bentrok/baudrate
+# drift. Lihat catatan lengkap di sensors/wind_direction.py.
+WIND_DIR_PORT     = _opt("EFWS_WIND_DIR_PORT", "/dev/serial0")
+WIND_DIR_BAUDRATE = _int("EFWS_WIND_DIR_BAUD", 9600)
+WIND_DIR_TIMEOUT  = _float("EFWS_WIND_DIR_TIMEOUT", 1.0)
 
 # ─── Anemometer RS485 ────────────────────────────────────────────────────────
 
@@ -240,23 +274,38 @@ LOG_PATH = _opt("EFWS_LOG_PATH", str(_ROOT / "logs" / "efws.log"))
 
 # ─── Timing ──────────────────────────────────────────────────────────────────
 # Siklus CEK sensor -- selalu jalan tiap interval ini, murni evaluasi
-# threshold (cepat, demi deteksi darurat responsif). TIDAK selalu berarti
-# kirim data -- lihat ROUTINE_SEND_INTERVAL_SEC di bawah.
+# threshold (cepat, demi deteksi darurat responsif). TIDAK PERNAH kirim ke
+# API dan TIDAK PERNAH simpan ke SQLite di sini -- itu tugas Telemetry
+# Publisher (lihat di bawah). Siklus ini juga tidak lagi mengambil GPS --
+# GPS hanya diambil oleh Location Publisher, tepat sebelum dikirim.
 SENSOR_READ_INTERVAL_SEC = _int("EFWS_READ_INTERVAL", 180)
 
-# Siklus KIRIM rutin (location+telemetry+heartbeat) saat kondisi NORMAL --
-# SENGAJA dipisah dari SENSOR_READ_INTERVAL_SEC: threshold tetap dicek tiap
-# 3 menit (respons cepat kalau darurat), tapi kalau semua normal, device
-# cukup lapor ke backend tiap ROUTINE_SEND_INTERVAL_SEC (default 3600s /
-# 60 menit) supaya tidak terlihat mati/hilang tanpa membanjiri API.
-# Begitu ada threshold yang dilewati, kirim LANGSUNG saat itu juga
-# ("emergency upload") tanpa menunggu jadwal rutin ini, dan jadwal rutin
-# di-reset dari titik itu (karena backend baru saja menerima laporan).
-ROUTINE_SEND_INTERVAL_SEC = _int("EFWS_ROUTINE_SEND_INTERVAL_SEC", 360)
+# ─── 3 scheduler independen (Location / Telemetry / Heartbeat) ────────────
+# Masing-masing endpoint punya scheduler & thread SENDIRI (lihat main.py:
+# EFWS._location_loop / _telemetry_loop / _heartbeat_loop). Tidak ada yang
+# saling menunggu atau saling memicu satu sama lain.
+#
+# Location  -- SELALU tiap 30 menit, tidak terpengaruh Emergency Mode sama
+#              sekali (spec: "Emergency Mode must never modify the execution
+#              interval of Location or Heartbeat").
+LOCATION_INTERVAL_SEC = _int("EFWS_LOCATION_INTERVAL_SEC", 1800)
+
+# Telemetry -- 30 menit saat NORMAL. Saat Emergency Mode aktif, scheduler
+#              yang SAMA (bukan scheduler kedua) beralih ke interval
+#              EMERGENCY_TELEMETRY_INTERVAL_SEC di bawah, supaya tidak
+#              mungkin ada dua pengiriman telemetry yang tumpang tindih.
+TELEMETRY_INTERVAL_SEC = _int("EFWS_TELEMETRY_INTERVAL_SEC", 1800)
+
+# Telemetry saat EMERGENCY -- 10 menit, HANYA endpoint ini yang berubah
+# jadwalnya saat emergency (Location & Heartbeat tetap di jadwal normalnya).
+EMERGENCY_TELEMETRY_INTERVAL_SEC = _int("EFWS_EMERGENCY_TELEMETRY_INTERVAL_SEC", 600)
+
+# Heartbeat -- SELALU tiap 5 menit. Tidak pernah bergantung pada Telemetry,
+# Location, ataupun Emergency Mode (spec eksplisit soal ini).
+HEARTBEAT_INTERVAL_SEC = _int("EFWS_HEARTBEAT_INTERVAL_SEC", 300)
 
 # Retry offline queue -- berjalan di thread TERPISAH dari siklus baca sensor
-# (lihat main.py EFWS._flush_queue_loop), supaya tetap tiap 2 menit persis
-# walau siklus baca sekarang 3 menit.
+# maupun ketiga publisher di atas, tiap 2 menit (dikonfirmasi user).
 EFWS_CONNECTIVITY_CHECK_SEC = _int("EFWS_CONNECTIVITY_CHECK_SEC", 120)
 
 # ─── Command executor (endpoint 4: /sensors/commands/ack) ──────────────────

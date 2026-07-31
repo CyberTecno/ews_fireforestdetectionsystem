@@ -29,6 +29,10 @@ SENSOR_SCHEMAS = {
         "deep":    {"raw": None, "moisture_percent": None},
     },
     "wind":    {"speed_ms": None},
+    "wind_dir": {"direction_code": None, "direction_abbr": None, "direction_name": None},
+    "flame":    {"analog_voltage": None, "flame_detected": None},
+    "rainfall": {"rainfall_total_mm": None, "rainfall_last_hour_mm": None,
+                 "tip_counter": None, "working_time_hours": None},
     "battery": {"voltage": None, "percent": None},
 }
 

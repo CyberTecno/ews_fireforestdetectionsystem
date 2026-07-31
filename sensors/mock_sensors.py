@@ -113,6 +113,25 @@ class MockAnemometer(_MockBase):
         return {"speed_ms": round(speed, 2), "_mock": True, "_scenario": sc}
 
 
+# ─── Wind Direction -- UART, muter searah jarum jam tiap ~10 detik ─
+class MockWindDirection(_MockBase):
+    _COMPASS = {
+        1: ("N", "Utara"), 2: ("NE", "Timur Laut"), 3: ("E", "Timur"),
+        4: ("SE", "Tenggara"), 5: ("S", "Selatan"), 6: ("SW", "Barat Daya"),
+        7: ("W", "Barat"), 8: ("NW", "Barat Laut"),
+    }
+
+    def read(self) -> dict:
+        code = int((time.time() // 10) % 8) + 1
+        abbr, name_id = self._COMPASS[code]
+        return {
+            "direction_code": code,
+            "direction_abbr": abbr,
+            "direction_name": f"{name_id} ({abbr})",
+            "_mock": True,
+        }
+
+
 # ─── Battery — Modul Sensor Tegangan DC 0-25V ────────────────────
 class MockBattery(_MockBase):
     PCT_BASE = {"normal": 85.0, "warning": 42.0, "critical": 15.0}
@@ -123,6 +142,33 @@ class MockBattery(_MockBase):
         v   = round(9.0 + pct / 100 * 3.6, 2)
         return {"voltage": v, "percent": round(pct, 1), "_mock": True, "_scenario": sc}
 
+
+class MockFlame(_MockBase):
+    def read(self) -> dict:
+        sc = self._scenario()
+        # "critical" scenario sesekali memicu deteksi api, supaya jalur flame
+        # bisa ikut teruji tanpa perlu hardware.
+        detected = sc == "critical" and random.random() < 0.3
+        voltage = _jitter(0.8, 0.1) if detected else _jitter(2.8, 0.1)
+        return {"analog_voltage": voltage, "flame_detected": detected, "_mock": True}
+
+
+class MockRainfall(_MockBase):
+    def __init__(self):
+        self._cumulative = 0.0
+
+    def read(self) -> dict:
+        sc = self._scenario()
+        rate = {"normal": 0.0, "warning": 0.4, "critical": 2.5}[sc]
+        increment = max(0.0, _jitter(rate, 0.3)) if rate else 0.0
+        self._cumulative += increment
+        return {
+            "rainfall_total_mm": round(self._cumulative, 4),
+            "rainfall_last_hour_mm": round(increment, 4),
+            "tip_counter": int(self._cumulative / 0.2794),  # 1 tip standar = 0.2794mm
+            "working_time_hours": round(time.time() / 3600 % 1000, 2),
+            "_mock": True,
+        }
 
 # ─── Mock Alarm (no GPIO) ────────────────────────────────────────
 class MockAlarmController:

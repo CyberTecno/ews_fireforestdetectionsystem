@@ -1,33 +1,11 @@
 """
-Submersible Water Level Pressure Sensor (4–20 mA)
+Submersible Water Level Pressure Sensor (4-20mA)
+Sensor loop-powered 2-kabel: 4mA=kosong, 20mA=penuh (PRESSURE_RANGE_M).
+Arus diubah tegangan lewat burden resistor, dibaca MCP3008 CH4 (lewat LLC).
 
-Sensor menghasilkan arus 4–20 mA.
-Arus diubah menjadi tegangan menggunakan burden resistor,
-kemudian dibaca MCP3008.
-
-Pipeline pembacaan:
-
-Sensor
-   │
-   ▼
-read_raw()
-   │
-   ▼
-_raw_to_voltage()
-   │
-   ▼
-_voltage_to_current()
-   │
-   ▼
-_current_to_level()
-   │
-   ▼
-_status_from_current()
-   │
-   ▼
-read()
+Jadi sekarang pakai get_mcp3008() yang
+sama seperti mq2.py/mq135.py/battery.py/soil.py.
 """
-
 from config import settings
 from sensors.mcp3008 import get_mcp3008
 
@@ -37,166 +15,51 @@ class PressureWaterSensor:
     def __init__(
         self,
         channel=None,
-        burden_resistor=None,
-        min_current_ma=None,
-        max_current_ma=None,
-        max_level_mm=None,
+        burden_ohm=None,
+        min_ma=None,
+        max_ma=None,
+        range_m=None,
     ):
-
-        self.channel = (
-            channel
-            if channel is not None
-            else settings.ADC_CHANNEL_PRESSURE
-        )
-
-        self.burden_resistor = (
-            burden_resistor
-            if burden_resistor is not None
-            else settings.PRESSURE_BURDEN_OHM
-        )
-
-        self.min_current = (
-            min_current_ma
-            if min_current_ma is not None
-            else settings.PRESSURE_MIN_MA
-        )
-
-        self.max_current = (
-            max_current_ma
-            if max_current_ma is not None
-            else settings.PRESSURE_MAX_MA
-        )
-
-        self.max_level = (
-            max_level_mm
-            if max_level_mm is not None
-            else settings.PRESSURE_RANGE_M
-        )
-
+        self.channel    = channel    if channel    is not None else settings.ADC_CHANNEL_PRESSURE
+        self.burden_ohm = burden_ohm if burden_ohm is not None else settings.PRESSURE_BURDEN_OHM
+        self.min_ma     = min_ma     if min_ma     is not None else settings.PRESSURE_MIN_MA
+        self.max_ma     = max_ma     if max_ma     is not None else settings.PRESSURE_MAX_MA
+        self.range_m    = range_m    if range_m    is not None else settings.PRESSURE_RANGE_M
         self.adc = get_mcp3008()
 
-    # ============================================================
-    # Hardware
-    # ============================================================
-
-    def read_raw(self) -> int:
-        """
-        Membaca nilai ADC mentah (0-1023).
-        """
-        return self.adc.read_raw(self.channel)
-
-    # ============================================================
-    # Conversion Helpers (Pure Functions)
-    # ============================================================
-
-    def _raw_to_voltage(self, raw: int) -> float:
-        """
-        ADC Raw -> Volt
-        """
-        return raw / 1023.0 * settings.MCP3008_VREF
-
-    def _voltage_to_current(self, voltage: float) -> float:
-        """
-        Volt -> mA
-        """
-        return (voltage / self.burden_resistor) * 1000
-
-    def _current_to_level(self, current: float) -> float:
-        """
-        mA -> Water Level (mm)
-        """
-
-        if current <= self.min_current:
-            return 0.0
-
-        level = (
-            (current - self.min_current)
-            / (self.max_current - self.min_current)
-        ) * self.max_level
-
-        return max(0.0, min(self.max_level, level))
-
-    def _status_from_current(self, current: float) -> str:
-
-        if current < self.min_current - 0.2:
-            return "SENSOR_DISCONNECTED"
-
-        if current > self.max_current + 1:
-            return "OVER_RANGE"
-
-        return "OK"
-
-    # ============================================================
-    # Public API
-    # ============================================================
-
-    def read_voltage(self) -> float:
-
-        raw = self.read_raw()
-
-        return round(
-            self._raw_to_voltage(raw),
-            4,
-        )
-
-    def read_current(self) -> float:
-
-        raw = self.read_raw()
-
-        voltage = self._raw_to_voltage(raw)
-
-        return round(
-            self._voltage_to_current(voltage),
-            2,
-        )
-
-    def read_level(self) -> float:
-
-        raw = self.read_raw()
-
-        voltage = self._raw_to_voltage(raw)
-
-        current = self._voltage_to_current(voltage)
-
-        return round(
-            self._current_to_level(current),
-            1,
-        )
+    # ------------------------------------------------------
 
     def read(self):
+        voltage = self.adc.read_voltage(self.channel)
 
-        raw = self.read_raw()
+        current_ma = (voltage / self.burden_ohm) * 1000.0
 
-        voltage = self._raw_to_voltage(raw)
+        fault = current_ma < 3.8
 
-        current = self._voltage_to_current(voltage)
+        if fault:
+            depth_m = 0.0
+        else:
+            depth_mm = ((current_ma - self.min_ma) / (self.max_ma - self.min_ma)) * (self.range_m * 1000)
+            depth_mm = max(0.0, min(self.range_m * 1000, depth_mm))
+            depth_m = depth_mm / 1000.0
 
-        level = self._current_to_level(current)
-
-        status = self._status_from_current(current)
+        # Konversi hidrostatik standar: 1 meter kolom air ≈ 0.0980665 bar
+        # (rho_air=1000 kg/m3, g=9.80665 m/s2) -- rumus fisika baku, bukan
+        # kalibrasi khusus hardware ini.
+        pressure_bar = depth_m * 0.0980665
 
         return {
-
-            "raw": raw,
-
-            "voltage": round(voltage, 4),
-
-            "current_mA": round(current, 2),
-
-            "water_level_mm": round(level, 1),
-
-            "status": status,
+            "voltage":         round(voltage, 4),
+            "current_ma":      round(current_ma, 4),
+            "depth_m":         round(depth_m, 4),
+            "pressure_bar":    round(pressure_bar, 4),
+            "fault_open_loop": fault,
         }
 
 
 if __name__ == "__main__":
-
     import time
-
     sensor = PressureWaterSensor()
-
     while True:
-
         print(sensor.read())
-
-        time.sleep(1)
+        time.sleep(2)

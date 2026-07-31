@@ -1,70 +1,120 @@
-import serial
-import time
+import serial, time
+
+from config import settings
+
+
 
 class WindDirectionSensor:
-    def __init__(self, port='/dev/serial0', baudrate=9600):
+    """
+    Sensor arah angin 4-kabel, UART:
+      VCC (merah) -> 3.3V
+      GND (hitam) -> GND
+      TX  (kuning) -> GPIO14 / pin 8  (RXD Raspberry Pi)
+      RX  (hijau)  -> GPIO15 / pin 10 (TXD Raspberry Pi)
+
+    Protokol: baris teks "*<kode>#", kode 1-8 = N/NE/E/SE/S/SW/W/NW.
+
+    CATATAN PENTING (Raspberry Pi 4 + UART GPIO14/15):
+    Secara default, /dev/serial0 di RPi4 nyambung ke mini-UART, yang
+    clock-nya ikut naik-turun mengikuti frekuensi VPU core -- baudrate bisa
+    ngaco/drift kalau tidak di-lock (core_freq=250 di /boot/config.txt), atau
+    port ini masih dipakai Bluetooth (default RPi4). Kalau sensor ini sering
+    kosong/datanya acak, itu gejala khasnya. Perlu dikonfirmasi: apakah
+    /boot/config.txt Anda sudah pakai dtoverlay=disable-bt (supaya PL011 full
+    UART pindah ke GPIO14/15) dan console serial (login shell lewat UART)
+    sudah dimatikan lewat raspi-config? Kalau belum, sensor ini berisiko
+    kirim data sampah/putus-putus walau wiring & kode-nya benar.
+    """
+
+    def __init__(self):
+        self.ser = serial.Serial(
+            settings.WIND_DIR_PORT,
+            settings.WIND_DIR_BAUDRATE,
+            timeout=settings.WIND_DIR_TIMEOUT,
+        )
+        # Bersihkan sisa data lama yang mungkin nyangkut di buffer OS.
+        self.ser.reset_input_buffer()
+        # Cache bacaan valid TERAKHIR -- dipakai kalau siklus sampling ini
+        # kebetulan belum ada baris baru masuk (sensor kirim terus tiap
+        # beberapa ratus ms, jauh lebih cepat dari siklus baca kita).
+        self._last = None
+
+    _COMPASS = {
+        1: ("N",  "Utara"),
+        2: ("NE", "Timur Laut"),
+        3: ("E",  "Timur"),
+        4: ("SE", "Tenggara"),
+        5: ("S",  "Selatan"),
+        6: ("SW", "Barat Daya"),
+        7: ("W",  "Barat"),
+        8: ("NW", "Barat Laut"),
+    }
+
+    def _decode(self, code: int):
+        abbr, name_id = self._COMPASS.get(code, (None, None))
+        name = f"{name_id} ({abbr})" if abbr else f"Tidak diketahui ({code})"
+        return abbr, name
+
+    def read(self) -> dict:
+        """
+        SELALU return dict berisi ketiga field ini (schema tetap, sama
+        seperti sensor lain di project ini -- lihat null_sensor.py), TIDAK
+        PERNAH return None, supaya caller (main.py) tidak perlu penanganan
+        khusus untuk sensor ini.
+        """
         try:
-            # /dev/serial0 adalah alias standar untuk pin GPIO 14 & 15 di Raspberry Pi
-            self.ser = serial.Serial(port, baudrate, timeout=1)
-            # Bersihkan sisa data lama yang mungkin nyangkut
-            self.ser.flushInput() 
-        except Exception as e:
-            print(f"Error membuka port serial: {e}")
-            self.ser = None
-
-    def get_direction_name(self, code):
-        # Kamus terjemahan arah angin (Bisa Anda sesuaikan jika arahnya terbalik)
-        directions = {
-            1: "Utara (N)",
-            2: "Timur Laut (NE)",
-            3: "Timur (E)",
-            4: "Tenggara (SE)",
-            5: "Selatan (S)",
-            6: "Barat Daya (SW)",
-            7: "Barat (W)",
-            8: "Barat Laut (NW)"
-        }
-        return directions.get(code, f"Tidak diketahui ({code})")
-
-    def read(self):
-        if self.ser is None:
-            return {"direction_code": None, "direction_name": None, "error": "Serial port tidak terbuka"}
-
-        try:
-            # Baca data baris per baris
-            if self.ser.in_waiting > 0:
-                data = self.ser.readline().decode('utf-8').strip()
-                
-                # Pastikan formatnya benar: contoh *5#
-                if data.startswith('*') and data.endswith('#'):
-                    # Ambil karakter di tengah (membuang bintang dan pagar)
-                    angka_str = data[1:-1]
-                    
+            # Kuras SEMUA baris yang menumpuk di buffer, ambil yang PALING
+            # BARU -- kalau cuma baca baris pertama, di siklus baca yang
+            # jarang (default tiap beberapa menit) datanya akan basi/telat.
+            latest_code = None
+            while self.ser.in_waiting > 0:
+                raw = self.ser.readline().decode("utf-8", errors="ignore").strip()
+                if raw.startswith("*") and raw.endswith("#"):
+                    angka_str = raw[1:-1]
                     if angka_str.isdigit():
-                        kode = int(angka_str)
-                        nama = self.get_direction_name(kode)
-                        return {"direction_code": kode, "direction_name": nama}
-                        
-        except UnicodeDecodeError:
-            # Abaikan jika ada data sampah/noise saat kabel baru dicolok
-            pass
+                        latest_code = int(angka_str)
+
+            if latest_code is not None:
+                abbr, name = self._decode(latest_code)
+                self._last = {
+                    "direction_code": latest_code,
+                    "direction_abbr": abbr,
+                    "direction_name": name,
+                }
+
+            if self._last is not None:
+                return dict(self._last)
+
+            return {
+                "direction_code": None,
+                "direction_abbr": None,
+                "direction_name": None,
+                "error": "belum ada data masuk dari sensor sejak EFWS start",
+            }
+
         except Exception as e:
-            return {"direction_code": None, "direction_name": None, "error": str(e)}
+            return {
+                "direction_code": None,
+                "direction_abbr": None,
+                "direction_name": None,
+                "error": str(e),
+            }
 
-        return None # Jika sedang tidak ada data yang masuk
 
-# Blok ini HANYA berjalan jika file ini dieksekusi langsung (untuk testing)
+# Blok untuk pengetesan langsung (hardware check manual, BUKAN pytest --
+# lihat tests/hardware_checks/ untuk konvensi penamaan check_*.py project ini)
 if __name__ == "__main__":
+
     sensor = WindDirectionSensor()
-    print("=== TEST SENSOR ARAH ANGIN ZHAFIRA (RASPBERRY PI) ===")
-    print("Putar baling-baling sensor... (Tekan Ctrl+C untuk berhenti)\n")
-    
-    while True:
-        hasil = sensor.read()
-        if hasil:
-            if "error" in hasil:
-                print(f"Error: {hasil['error']}")
+    print("=== EFWS Wind Direction Test ===")
+    print("Putar baling-baling sensor... (Ctrl+C untuk berhenti)\n")
+    try:
+        while True:
+            data = sensor.read()
+            if data.get("error"):
+                print(f"Error: {data['error']}")
             else:
-                print(f"Data Masuk -> Kode: {hasil['direction_code']} | Arah: {hasil['direction_name']}")
-        
-        time.sleep(0.1) # Jeda super singkat agar tidak ketinggalan data
+                print(f"Kode: {data['direction_code']} | {data['direction_abbr']} | {data['direction_name']}")
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopped.")
