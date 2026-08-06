@@ -492,7 +492,7 @@ class EFWS:
         for key, sensor in self.sensors.items():
             try:
                 data[key] = sensor.read()
-                print(f"Sensor '{key}' read: {data[key]}")
+                logger.debug(f"Sensor '{key}' read: {data[key]}")
             except Exception as e:
                 logger.error("Sensor '%s' read error: %s", key, e)
                 data[key] = {"error": str(e)}
@@ -536,6 +536,8 @@ class EFWS:
             "soil_surface": _exceeds(surface, t["soilMoistureDangerThreshold"]["surface"], lower_is_worse=True),
             "soil_deep":    _exceeds(deep,    t["soilMoistureDangerThreshold"]["deep"],    lower_is_worse=True),
             "wind":        _exceeds(data["wind"].get("speed_ms"), t["windDangerThreshold"], lower_is_worse=False),
+            "pressure": _exceeds(data["pressure"].get("pressure_bar"),t["pressureDangerThreshold"],lower_is_worse=True,),
+            "rainfall": _exceeds(data["rainfall"].get("rainfall_last_hour_mm"),t["rainfallDangerThreshold"],lower_is_worse=False,),
         }
 
         triggered = [k for k, v in checks.items() if v]

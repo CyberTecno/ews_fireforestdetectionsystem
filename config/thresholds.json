@@ -21,6 +21,13 @@
   "windDangerThreshold": 15.0,
   "_windDangerThreshold_note": "m/s. TIDAK ada padanannya di response API (API tidak mengirim threshold angin) -- field ini SELALU dari lokal, tidak pernah di-override remote.",
 
+  "pressureDangerThreshold": 0,
+  "_pressureDangerThreshold_note": "Tekanan air (bar). Nilai DI BAWAH ini dianggap berbahaya (evaluasi lower_is_worse=true).",
+
+  "rainfallDangerThreshold": 1.0,
+  "_rainfallDangerThreshold_note": "Curah hujan (mm) sejak telemetry sebelumnya.",
+
+
   "alarm": {
     "consecutive_readings_required": 3,
     "cooldown_seconds": 300,

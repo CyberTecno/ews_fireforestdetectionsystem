@@ -104,8 +104,8 @@ ADC_CHANNEL_MQ2             = _int("EFWS_ADC_MQ2",          0)   # LLC HV-1
 ADC_CHANNEL_MQ135           = _int("EFWS_ADC_MQ135",         1)   # LLC HV-2
 ADC_CHANNEL_SOIL_SURFACE    = _int("EFWS_ADC_SOIL_SURFACE",  2)   # LLC HV-3 (probe 0-30cm)
 ADC_CHANNEL_SOIL_DEEP       = _int("EFWS_ADC_SOIL_DEEP",     3)   # LLC HV-4 (probe 30-60cm)
-ADC_CHANNEL_PRESSURE        = _int("EFWS_ADC_PRESSURE",      4)   # LLC HV-5 (pressure sensor via R_BURDEN)
-ADC_CHANNEL_BATTERY         = _int("EFWS_ADC_BATTERY",       5)   # LLC HV-6 (voltage sensor module OUT)
+ADC_CHANNEL_PRESSURE        = _int("EFWS_ADC_PRESSURE",      4)   # LANGSUNG ke MCP3008 CH5 (pressure sensor via R_BURDEN)
+ADC_CHANNEL_BATTERY         = _int("EFWS_ADC_BATTERY",       5)   # LANGSUNG ke MCP3008 CH6, TIDAK lewat LLC (lihat catatan di sensors/battery.py)
 # CH6-CH7 tidak dikabel — spare fisik di MCP3008
 
 # ─── Gravity Rainfall Sensor (DFRobot SEN0575) ─────────────────────────────
@@ -125,8 +125,15 @@ RAINFALL_READ_INTERVAL = 2
 # under-read sekitar 34%. Kalau modul fisik Anda beda merek/rasio, sesuaikan
 # lewat EFWS_BATTERY_SENSOR_MAX_V.
 BATTERY_SENSOR_MAX_V = _float("EFWS_BATTERY_SENSOR_MAX_V", 16.5)  # max input modul sensor (V) @ VREF 3.3V, rasio 1:5
-BATTERY_MAX_V        = _float("EFWS_BATTERY_MAX_V",        12.6)  # tegangan baterai penuh (V)
-BATTERY_MIN_V        = _float("EFWS_BATTERY_MIN_V",         9.0)  # tegangan baterai kosong (V)
+# BATTERY_MAX_V DIKONFIRMASI user: catu daya/baterai fisiknya max 14.4V
+# (sebelumnya 12.6V, sudah diganti). Ini di bawah batas aman modul (16.5V),
+# masih ada headroom ~2.1V.
+BATTERY_MAX_V        = _float("EFWS_BATTERY_MAX_V",        14.4)  # tegangan baterai penuh (V) -- DIKONFIRMASI user
+# BATTERY_MIN_V BELUM ikut dikonfirmasi ulang saat BATTERY_MAX_V diubah ke
+# 14.4V -- nilai 9.0V ini masih sisa dari pasangan lama (12.6V/9.0V). Kalau
+# baterai Anda LiFePO4 12V, titik "kosong" yang aman biasanya ~10-11V (bukan
+# 9V, itu terlalu dalam buat LiFePO4). Mohon dikonfirmasi/disesuaikan.
+BATTERY_MIN_V        = _float("EFWS_BATTERY_MIN_V",         9.0)  # tegangan baterai kosong (V) -- PERLU DIKONFIRMASI ULANG
 
 # ─── Submersible / Pressure Water Level Sensor — loop 4-20mA ───────────────
 # CATATAN: submersible.py (script berdiri sendiri, pakai channel & rumus yang

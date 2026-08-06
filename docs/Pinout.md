@@ -87,7 +87,9 @@ Verifikasi: `ls /dev/spidev*` → harus muncul `/dev/spidev0.0`
 
 ## 4. Peta Channel MCP3008 — SATU Logic Level Converter
 
-Semua sinyal analog 0-5V **wajib** lewat LLC sebelum masuk MCP3008 (VREF 3.3V).
+Sinyal analog 0-5V (MQ-2, MQ-135, soil x2, pressure) **wajib** lewat LLC sebelum
+masuk MCP3008 (VREF 3.3V). **Battery/voltage sensor TIDAK** — lihat catatan
+merah di bawah tabel.
 Gunakan modul LLC minimal 6-channel bidirectional (mis. modul 8-channel TXS0108E —
 lebih umum dijual dan menyisakan 2 channel untuk ekspansi).
 
@@ -97,8 +99,8 @@ lebih umum dijual dan menyisakan 2 channel untuk ekspansi).
 | HV-2 / LV-2 | MQ-135 **AOUT** | **CH1** | Air quality analog |
 | HV-3 / LV-3 | Soil Surface **AOUT** | **CH2** | Kelembaban 0-30cm |
 | HV-4 / LV-4 | Soil Deep **AOUT** | **CH3** | Kelembaban 30-60cm |
-| HV-5 / LV-5 | Pressure sensor (via **R_BURDEN**) | **CH4** | Ketinggian air (loop 4-20mA) |
-| HV-6 / LV-6 | Voltage Sensor Module **OUT** | **CH5** | Tegangan baterai (0-25V) |
+| *(tidak lewat LLC)* Channel 5 | Pressure sensor (via **R_BURDEN**) | **CH4** | Ketinggian air (loop 4-20mA) |
+| *(tidak lewat LLC)* Channel 6 | Voltage Sensor Module **S** → **langsung** | **CH5** | Tegangan baterai — lihat §Battery di bawah |
 | HV-7..8 / LV-7..8 | *(spare / ekspansi)* | CH6-CH7 | — |
 
 ### Wiring modul LLC
@@ -191,20 +193,32 @@ di `.env` dengan rentang kedalaman/tekanan sensor fisik Anda (banyak varian: 0-5
 dan `waterLevelCurrentMa` (arus loop mentah, berguna buat backend mendeteksi loop
 putus — nilai mendadak jatuh ke ~0mA berarti kabel putus, bukan air kosong).
 
-### Modul Sensor Tegangan DC 0-25V (Baterai)
+### Modul Sensor Tegangan DC (Battery) — TIDAK lewat LLC
 
-Modul ini sudah punya voltage divider internal (tidak perlu buat sendiri).
+Modul ini sudah punya voltage divider resistif internal PASIF (rasio 1:5
+tetap), tidak perlu buat sendiri. **Beda dari 4 sensor analog lainnya di
+atas, modul ini TIDAK dikabel lewat LLC** — sinyal keluarannya sudah native
+3.3V (lihat catatan di `sensors/battery.py`). Rating pabrikan modul ini
+sering ditulis "0-25V", tapi itu cuma berlaku kalau ADC-nya diberi VREF 5V.
+Di project ini (MCP3008 VREF 3.3V), **batas aman input yang benar adalah
+16.5V** (3.3V x rasio 5) — baterai Anda (max 14.4V) masih di bawah batas
+ini dengan headroom ~2.1V, aman.
 
-| Pin modul | Hubung ke |
-|-----------|-----------|
-| IN+ | Terminal Battery+ (12V LiFePO4/sejenis) |
-| IN− | Terminal Battery− |
-| GND (sisi output) | GND bersama |
-| S (output, 0-5V proporsional 0-25V) | LLC **HV-6** → LV-6 → MCP3008 **CH5** |
+Modul ini punya **5 titik sambung, di DUA sisi berbeda** — jangan tertukar:
+
+| Pin modul | Sisi | Hubung ke |
+|-----------|------|-----------|
+| **+** | Output/logic (ke Pi) | 3.3V Pi (Pin 1 atau 17) |
+| **−** | Output/logic (ke Pi) | GND bersama |
+| **S** | Output/logic (ke Pi) | **LANGSUNG** ke MCP3008 **CH5** (tanpa LLC) |
+| **anode / IN+** | Input (yang diukur) | Terminal Battery+ (12V LiFePO4/sejenis, max 14.4V) |
+| **cathode / IN−** | Input (yang diukur) | Terminal Battery− |
 
 Formula konversi ada di `sensors/battery.py`. Kalibrasi `BATTERY_MAX_V` /
-`BATTERY_MIN_V` di `.env` sesuai spesifikasi baterai Anda (default 12.6V penuh,
-9.0V kosong, cocok untuk pack 3S LiFePO4).
+`BATTERY_MIN_V` di `.env` sesuai spesifikasi baterai Anda — **`BATTERY_MAX_V`
+sudah di-set 14.4V** (dikonfirmasi). `BATTERY_MIN_V` (default 9.0V) **belum**
+ikut dikonfirmasi ulang — untuk pack LiFePO4 12V, titik kosong yang aman
+biasanya ~10-11V, bukan 9V (terlalu dalam). Mohon dicek/disesuaikan.
 
 ### RS485 Anemometer (Modbus RTU)
 | Koneksi | Hubung ke |
@@ -280,26 +294,29 @@ Sisi kontrol (Pi 3.3V GPIO):          Sisi daya tinggi (12V):
 ```
 MQ-2 AOUT (5V)      ──┐
 MQ-135 AOUT (5V)    ──┤
-Soil-S AOUT (5V)    ──┤    LLC (1 modul, 6 channel dipakai)
-Soil-D AOUT (5V)    ──┤    HV1-6 (5V) → LV1-6 (3.3V)
-Pressure via R_BURDEN─┤
-Battery Sensor OUT  ──┘         │
-                                ▼
-                     MCP3008 CH0-CH5  (SPI0)
-                                │
-BME280 (I2C langsung) ──────────┤
-RS485 Anemometer (USB) ─────────┤
-A7670E / SIM7600 (USB) ─────────┤
-                                ▼
-                       Raspberry Pi 4 — main.py
-                       1) baca semua sensor
-                       2) SIMPAN ke SQLite dulu (sensor_readings)
-                       3) evaluasi lokal → sirine (real-time, tidak disimpan)
-                       4) coba kirim ke API — gagal? masuk antrian (api_queue)
-                       5) cek sinyal ulang tiap 2 menit → auto-flush antrian
-                                │ GPIO27
-                                ▼
-                        Relay 5V ──► Sirine 12V
+Soil-S AOUT (5V)    ──┤    LLC (1 modul, 4 channel dipakai)
+Soil-D AOUT (5V)    ──┤    HV1-5 (5V) → LV1-5 (3.3V)
+                      │
+                      │
+                      ▼
+Pressure via R_BURDEN
+Battery Sensor (native 3.3V, TANPA LLC) ──────────────┐
+                                                      ▼
+                                             MCP3008 CH0-CH5 (SPI0)
+                                                      │
+BME280 (I2C langsung) ────────────────────────────────┤
+RS485 Anemometer (USB) ───────────────────────────────┤
+A7670E / SIM7600 (USB) ───────────────────────────────┤
+                                                      ▼
+                                            Raspberry Pi 4 — main.py
+                                            1) baca semua sensor
+                                            2) SIMPAN ke SQLite dulu (sensor_readings)
+                                            3) evaluasi lokal → sirine (real-time, tidak disimpan)
+                                            4) coba kirim ke API — gagal? masuk antrian (api_queue)
+                                            5) cek sinyal ulang tiap 2 menit → auto-flush antrian
+                                                     │ GPIO27
+                                                     ▼
+                                             Relay 5V ──► Sirine 12V
 ```
 
 ---
@@ -316,7 +333,7 @@ A7670E / SIM7600 (USB) ─────────┤
 | MQ-2 / MQ-135 heater | 5V | Buck converter langsung | ~150mA masing-masing |
 | Soil probe ×2 | 5V atau 3.3V | Sesuai datasheet probe | |
 | Submersible pressure sensor | 12-24V (loop) | **PSU terpisah**, bukan dari Pi/buck 5V | Loop-powered |
-| Modul sensor tegangan (battery) | Pasif, tap dari Battery+/− | — | Tidak perlu suplai terpisah |
+| Modul sensor tegangan (battery) | Sisi ukur: pasif, tap Battery+/−. Sisi logic ("+"/"−"): **3.3V dari Pi** | Pi 3.3V rail (untuk pin "+"/"−" logic-nya) | **BUKAN tanpa suplai** — pin "+"/"−" (bukan IN+/IN−) wajib ke 3.3V/GND Pi, lihat §Battery |
 | RS485 anemometer | 12V atau 5V | Sesuai datasheet unit | |
 | A7670E/SIM7600 | 5V atau 3.7-4.2V | Sesuai board HAT | |
 | Relay coil | 5V | Pi 5V rail | |
@@ -334,7 +351,7 @@ A7670E / SIM7600 (USB) ─────────┤
 [ ] MCP3008 VDD & VREF ke 3.3V (bukan 5V)
 [ ] R_BURDEN 250Ω terpasang benar di loop pressure sensor, tap ke LLC HV-5
 [ ] PSU loop pressure sensor terpisah dari Pi/buck converter 5V
-[ ] Modul sensor tegangan tap langsung ke Battery+/− (bukan lewat relay)
+[ ] Modul sensor tegangan: sisi ukur (anode/cathode) tap langsung ke Battery+/− (bukan lewat relay); sisi logic ("+"/"−") ke 3.3V/GND Pi; "S" LANGSUNG ke MCP3008 CH5 (TANPA LLC)
 [ ] Jalur 12V sirine hanya lewat relay COM/NO, tidak menyentuh Pi
 [ ] Hanya SATU modul terpasang: A7670E ATAU SIM7600 (jangan dua-duanya)
 [ ] Antena LTE + GNSS terpasang

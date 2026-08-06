@@ -22,20 +22,20 @@ while True:
         arus_mA = (tegangan / RESISTOR_OHM) * 1000
         
         # Hitung ketinggian air
-        # Sensor ini: 4mA = 0 mm, 20mA = 4000 mm
-        # Jarak range arus = 16mA (dari 20 - 4), Range air = 4000 mm
+        # Sensor ini: 4mA = 0 mm, 20mA = 3000 mm
+        # Jarak range arus = 16mA (dari 20 - 4), Range air = 3000 mm
         
         if arus_mA < 3.8:
             status = "SENSOR TERPUTUS / KERING"
             level_air_mm = 0
         else:
             status = "OK"
-            level_air_mm = ((arus_mA - 4.0) / 16.0) * 4000
+            level_air_mm = ((arus_mA - 4.0) / 16.0) * 3000
             
             # Jangan biarkan angkanya minus jika arus sedikit di bawah 4mA
             if level_air_mm < 0: level_air_mm = 0
-            # Maksimal 4000 mm
-            if level_air_mm > 4000: level_air_mm = 4000
+            # Maksimal 3000 mm
+            if level_air_mm > 3000: level_air_mm = 3000
 
         print(f"Volt: {tegangan:.2f}V | Arus: {arus_mA:.2f} mA | Level Air: {level_air_mm:.1f} mm | Status: {status}")
         

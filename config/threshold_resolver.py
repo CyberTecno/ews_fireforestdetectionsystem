@@ -47,6 +47,14 @@ def resolve_active_thresholds(local: dict, remote_config: Optional[dict]) -> dic
         remote.get("waterDangerThreshold"), local["waterDangerThreshold"]
     )
 
+    resolved["pressureDangerThreshold"] = _pick(
+        remote.get("pressureDangerThreshold"),local["pressureDangerThreshold"]
+    )
+
+    resolved["rainfallDangerThreshold"] = _pick(
+        remote.get("rainfallDangerThreshold"),local["rainfallDangerThreshold"]
+    )
+
     # soilMoistureDangerThreshold: nested dict {surface, deep} -- merge per sub-field juga,
     # karena API bisa saja suatu saat cuma mengisi salah satu (mis. surface saja).
     remote_soil = remote.get("soilMoistureDangerThreshold")
