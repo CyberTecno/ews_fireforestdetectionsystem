@@ -133,7 +133,7 @@ BATTERY_MIN_V        = _float("EFWS_BATTERY_MIN_V",         9.0)  # tegangan bat
 # sama) sudah DIGABUNG ke sini / dihapus -- pressure.py adalah satu-satunya
 # implementasi untuk sensor ini sekarang (lihat sensors/pressure.py).
 PRESSURE_BURDEN_OHM = _float("EFWS_PRESSURE_BURDEN_OHM",     100.0)  # 4mA→1V, 20mA→5V
-PRESSURE_MIN_MA     = _float("EFWS_PRESSURE_MIN_MA",       4.0)
+PRESSURE_MIN_MA     = _float("EFWS_PRESSURE_MIN_MA",       4.032)
 PRESSURE_MAX_MA     = _float("EFWS_PRESSURE_MAX_MA",      20.0)
 PRESSURE_RANGE_M    = _float("EFWS_PRESSURE_RANGE_M",      3.0)  # rentang penuh sensor, sesuaikan datasheet
 

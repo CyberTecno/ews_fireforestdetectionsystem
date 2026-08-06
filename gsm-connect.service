@@ -13,6 +13,9 @@ ExecStart=/home/uwfadmin/ews/scripts/gsm_connect.sh
 
 TimeoutStartSec=120
 
+Restart=on-failure
+RestartSec=10
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ews-iot-gsm
