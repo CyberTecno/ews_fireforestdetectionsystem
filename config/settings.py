@@ -87,26 +87,33 @@ BME280_ADDRESS = int(_opt("EFWS_BME280_ADDR", "0x76"), 16)
 # tegangan baterai DC 0-25V, dan modem 4G (A7670E ATAU SIM7600 — auto-detect,
 # hanya satu yang dipasang).
 #
-#   LLC (HV=5V, LV=3.3V) — semua sensor analog 0-5V:
-#     HV-1 → LV-1 : MQ-2   AOUT                    → CH0
-#     HV-2 → LV-2 : MQ-135 AOUT                     → CH1
-#     HV-3 → LV-3 : Soil Surface AOUT                → CH2
-#     HV-4 → LV-4 : Soil Deep    AOUT                → CH3
-#     HV-5 → LV-5 : Pressure sensor (lewat R_BURDEN) → CH4
-#     HV-6 → LV-6 : Voltage Sensor Module OUT         → CH5
-#     HV-7..8 / CH6-CH7 : spare, tidak dikabel
+#   LLC (HV=5V, LV=3.3V) — 4 channel, HANYA untuk sensor analog 0-5V yang
+#   genuinely butuh step-down (MQ-2, MQ-135, soil x2). Pressure & Battery
+#   TIDAK lewat LLC ini (lihat catatan masing-masing di bawah).
+#     LLC CH1 : MQ-2   AOUT                    → MCP3008 CH0
+#     LLC CH2 : MQ-135 AOUT                     → MCP3008 CH1
+#     LLC CH3 : Soil Surface AOUT                → MCP3008 CH2
+#     LLC CH4 : Soil Deep    AOUT                → MCP3008 CH3
+#   (LLC modul fisik cuma 4 channel, sudah penuh terpakai di atas)
+#
+#   TANPA LLC (langsung ke MCP3008):
+#     Pressure sensor (lewat R_BURDEN 100 Ohm)   → MCP3008 CH4
+#     Voltage Sensor Module "S" (native 3.3V)     → MCP3008 CH5
+#     Flame sensor AO (native 3.3V)               → MCP3008 CH6
+#   MCP3008 CH7 : spare, tidak dikabel
 SPI_BUS          = _int("EFWS_SPI_BUS", 0)
 SPI_DEVICE       = _int("EFWS_SPI_DEVICE", 0)
 SPI_MAX_SPEED_HZ = _int("EFWS_SPI_SPEED", 1350000)
 MCP3008_VREF     = _float("EFWS_MCP3008_VREF", 3.3)
 
-ADC_CHANNEL_MQ2             = _int("EFWS_ADC_MQ2",          0)   # LLC HV-1
-ADC_CHANNEL_MQ135           = _int("EFWS_ADC_MQ135",         1)   # LLC HV-2
-ADC_CHANNEL_SOIL_SURFACE    = _int("EFWS_ADC_SOIL_SURFACE",  2)   # LLC HV-3 (probe 0-30cm)
-ADC_CHANNEL_SOIL_DEEP       = _int("EFWS_ADC_SOIL_DEEP",     3)   # LLC HV-4 (probe 30-60cm)
-ADC_CHANNEL_PRESSURE        = _int("EFWS_ADC_PRESSURE",      4)   # LANGSUNG ke MCP3008 CH5 (pressure sensor via R_BURDEN)
-ADC_CHANNEL_BATTERY         = _int("EFWS_ADC_BATTERY",       5)   # LANGSUNG ke MCP3008 CH6, TIDAK lewat LLC (lihat catatan di sensors/battery.py)
-# CH6-CH7 tidak dikabel — spare fisik di MCP3008
+ADC_CHANNEL_MQ2             = _int("EFWS_ADC_MQ2",          0)   # LLC CH1
+ADC_CHANNEL_MQ135           = _int("EFWS_ADC_MQ135",         1)   # LLC CH2
+ADC_CHANNEL_SOIL_SURFACE    = _int("EFWS_ADC_SOIL_SURFACE",  2)   # LLC CH3 (probe 0-30cm)
+ADC_CHANNEL_SOIL_DEEP       = _int("EFWS_ADC_SOIL_DEEP",     3)   # LLC CH4 (probe 30-60cm)
+ADC_CHANNEL_PRESSURE        = _int("EFWS_ADC_PRESSURE",      4)   # LANGSUNG ke MCP3008 CH4 lewat R_BURDEN 100 Ohm, TIDAK lewat LLC
+ADC_CHANNEL_BATTERY         = _int("EFWS_ADC_BATTERY",       5)   # LANGSUNG ke MCP3008 CH5, TIDAK lewat LLC (lihat catatan di sensors/battery.py)
+ADC_CHANNEL_FLAME_AO   = _int("EFWS_ADC_FLAME_AO", 6)          # MCP3008 CH6, langsung tanpa LLC. CH7 = spare.
+# CH7 spare (fisik kosong, di ujung setelah flame)
 
 # ─── Gravity Rainfall Sensor (DFRobot SEN0575) ─────────────────────────────
 # (I2C_BUS dipakai bersama dengan BME280 -- lihat definisi di atas, TIDAK
@@ -144,12 +151,10 @@ PRESSURE_MIN_MA     = _float("EFWS_PRESSURE_MIN_MA",       4.032)
 PRESSURE_MAX_MA     = _float("EFWS_PRESSURE_MAX_MA",      20.0)
 PRESSURE_RANGE_M    = _float("EFWS_PRESSURE_RANGE_M",      3.0)  # rentang penuh sensor, sesuaikan datasheet
 
-# ─── Flame Sensor (IR, dibaca via AO/analog di MCP3008 channel TERAKHIR) ───
-# Keputusan user: pakai AO lewat MCP3008 CH7 (channel terakhir yang masih
-# kosong), BUKAN lewat GPIO digital DO. Threshold voltase BELUM dikalibrasi
-# ke unit fisik -- lihat comment kalibrasi di sensors/flame.py sebelum
-# dipakai di lapangan.
-ADC_CHANNEL_FLAME_AO   = _int("EFWS_ADC_FLAME_AO", 7)          # CH6 spare, CH7 = flame (terakhir)
+# ─── Flame Sensor (IR, dibaca via AO/analog di MCP3008 CH6) ───────────────
+# Keputusan user: pakai AO lewat MCP3008 CH6, BUKAN lewat GPIO digital DO.
+# Threshold voltase BELUM dikalibrasi ke unit fisik -- lihat comment
+# kalibrasi di sensors/flame.py sebelum dipakai di lapangan.
 FLAME_AO_THRESHOLD_V   = _float("EFWS_FLAME_AO_THRESHOLD_V", 1.65)  # PERKIRAAN AWAL (setengah VREF) -- WAJIB dikalibrasi ulang di lapangan
 
 # ─── smokeLevel: gabungan MQ-2 + MQ-135 → persentase 0-100% ────────────────

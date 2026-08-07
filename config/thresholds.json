@@ -18,15 +18,14 @@
   "waterDangerThreshold": 0.5,
   "_waterDangerThreshold_note": "Ketinggian air (m) di tandon/reservoir. Nilai DI BAWAH ini = air menipis (evaluasi lower_is_worse). API contoh mengirim null untuk field ini di sejumlah device -- kalau null, angka lokal ini yang dipakai.",
 
-  "windDangerThreshold": 15.0,
-  "_windDangerThreshold_note": "m/s. TIDAK ada padanannya di response API (API tidak mengirim threshold angin) -- field ini SELALU dari lokal, tidak pernah di-override remote.",
-
-  "pressureDangerThreshold": 0,
-  "_pressureDangerThreshold_note": "Tekanan air (bar). Nilai DI BAWAH ini dianggap berbahaya (evaluasi lower_is_worse=true).",
+  "pressureDangerThreshold": 0.049,
+  "_pressureDangerThreshold_note": "Bar. Sensor & satuan yang SAMA dengan waterDangerThreshold (cuma representasi beda: bar vs meter) -- nilai lokal ini diturunkan dari waterDangerThreshold (0.5m x 0.0980665 = ~0.049 bar) supaya konsisten, TAPI backend bisa saja menganggapnya threshold independen. Evaluasi lower_is_worse (tekanan turun = air menipis, sama arah dengan water). API contoh mengirim null untuk field ini -- kalau null, angka lokal ini yang dipakai. Belum ada konfirmasi eksplisit dari backend bahwa nilai ini benar; sesuaikan kalau backend punya angka sendiri.",
 
   "rainfallDangerThreshold": 1.0,
-  "_rainfallDangerThreshold_note": "Curah hujan (mm) sejak telemetry sebelumnya.",
+  "_rainfallDangerThreshold_note": "mm. Dibandingkan terhadap rainfall_last_hour_mm (bacaan window 1 jam dari sensor -- BUKAN delta-sejak-telemetry yang dikirim di payload API, karena evaluasi alarm ini jalan tiap siklus sampling yang jauh lebih sering dari siklus kirim telemetry). Evaluasi lower_is_worse=False (curah hujan TINGGI = berbahaya, arah sama dengan smoke/temperature/wind). Nilai 1.0 di sini SAMA dengan yang pernah dikirim backend di response contoh -- dipakai sebagai fallback kalau field ini null di respons berikutnya.",
 
+  "windDangerThreshold": 15.0,
+  "_windDangerThreshold_note": "m/s. TIDAK ada padanannya di response API (API tidak mengirim threshold angin) -- field ini SELALU dari lokal, tidak pernah di-override remote.",
 
   "alarm": {
     "consecutive_readings_required": 3,

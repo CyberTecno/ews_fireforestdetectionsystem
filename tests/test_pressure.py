@@ -3,7 +3,8 @@ TEST — Submersible Pressure Sensor (ketinggian air, loop 4-20mA via burden res
 
 Cek dulu sebelum run:
   ls /dev/spidev*  → harus ada /dev/spidev0.0
-  R_BURDEN 250Ω terpasang di loop, tap-nya ke LLC HV-5 → LV-5 → MCP3008 CH4
+  R_BURDEN 100Ω terpasang di loop, tap-nya LANGSUNG ke MCP3008 CH4 (TANPA
+  LLC -- tegangan burden 0.4-2.0V sudah otomatis dalam rentang aman ADC)
   PSU loop 12-24V sudah menyala (sensor ini loop-powered, BUKAN dari Pi/buck 5V)
 
 Yang dicek:

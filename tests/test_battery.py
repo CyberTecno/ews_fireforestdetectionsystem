@@ -1,9 +1,11 @@
 """
-TEST — Modul Sensor Tegangan DC 0-25V (baterai, lewat MCP3008 CH5)
+TEST — Modul Sensor Tegangan DC (baterai, LANGSUNG ke MCP3008 CH5, TANPA LLC)
 
 Cek dulu sebelum run:
   ls /dev/spidev*  → harus ada /dev/spidev0.0
-  Pin S modul tersambung ke LLC HV-6 → LV-6 → MCP3008 CH5
+  Pin S modul tersambung LANGSUNG ke MCP3008 CH5 (BUKAN lewat LLC -- sinyal
+  modul ini sudah native 3.3V, lihat sensors/battery.py)
+  Pin "+"/"−" modul (logic side, BEDA dari IN+/IN− yang diukur) ke 3.3V/GND Pi
 
 Usage: python3 tests/test_battery.py
 """

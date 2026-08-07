@@ -1,5 +1,5 @@
 """
-IR Flame Sensor -- dibaca via AO (analog) di MCP3008 channel TERAKHIR (CH7).
+IR Flame Sensor -- dibaca via AO (analog) di MCP3008 CH6.
 
 Keputusan user: sensor ini dikabel HANYA lewat AO ke MCP3008, BUKAN lewat
 GPIO digital DO -- jadi tidak perlu RPi.GPIO/level converter tambahan untuk
