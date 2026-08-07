@@ -241,7 +241,7 @@ class SimInterface:
 
     # ── Public API (sama untuk keduanya) ─────────────────────────
     def get_gps(self, timeout: int = None, interval: float = 3.0) -> dict:
-        t = timeout if timeout is not None else settings.GPS_TIMEOUT
+        t = timeout if timeout is not None else settings.GPS_TIMEOUT_SEC
         return self._drv.get_gps(timeout=t, interval=interval)
 
     def get_gps_location(self) -> "tuple | None":

@@ -81,11 +81,13 @@ class RainfallSensor:
 
                 return list(read)
 
-            except OSError:
-
+            except OSError as e:
+                if attempt == 2:
+                    raise OSError(
+                        f"I2C read gagal setelah 3 percobaan "
+                        f"(register=0x{register:02X}, address=0x{self.address:02X})"
+                    ) from e
                 time.sleep(0.05)
-
-        raise
 
     def _write(self, register, data):
         if isinstance(data, int):
@@ -102,10 +104,13 @@ class RainfallSensor:
                 time.sleep(0.10)
                 return
 
-            except OSError:
+            except OSError as e:
+                if attempt == 2:
+                    raise OSError(
+                        f"I2C write gagal setelah 3 percobaan "
+                        f"(register=0x{register:02X}, address=0x{self.address:02X})"
+                    ) from e
                 time.sleep(0.05)
-
-        raise
 
     ############################################################
     # DEVICE
@@ -270,4 +275,4 @@ class RainfallSensor:
         }
 
     def close(self):
-        self.bus.close()
+        self.bus.close()

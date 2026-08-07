@@ -96,11 +96,11 @@ python3 tests/test_rainfall.py
 | DIN (pin 11)  | GPIO10 (MOSI) | |
 | CS/SHDN (pin 10) | GPIO8 (CE0) | |
 | DGND (pin 9)  | GND bersama | |
-| CH0 | *(spare, tidak dikabel)* | LLC cuma 4 channel, sudah penuh di CH1-4 |
 | CH1-CH4 | Lihat §4 — lewat LLC | MQ-2, MQ-135, Soil Surface, Soil Deep |
 | CH5 | Pressure sensor, **langsung tanpa LLC** | Lewat R_BURDEN 100Ω |
 | CH6 | Battery/voltage sensor, **langsung tanpa LLC** | Sinyal native 3.3V |
 | CH7 | Flame sensor (AO), **langsung tanpa LLC** | Sinyal native 3.3V |
+| CH8 | *(spare, tidak dikabel)* | LLC cuma 4 channel, sudah penuh di CH1-4 |
 
 Verifikasi: `ls /dev/spidev*` → harus muncul `/dev/spidev0.0`
 
@@ -254,9 +254,7 @@ Modul ini punya **5 titik sambung, di DUA sisi berbeda** — jangan tertukar:
 
 Formula konversi ada di `sensors/battery.py`. Kalibrasi `BATTERY_MAX_V` /
 `BATTERY_MIN_V` di `.env` sesuai spesifikasi baterai Anda — **`BATTERY_MAX_V`
-sudah di-set 14.4V** (dikonfirmasi). `BATTERY_MIN_V` (default 9.0V) **belum**
-ikut dikonfirmasi ulang — untuk pack LiFePO4 12V, titik kosong yang aman
-biasanya ~10-11V, bukan 9V (terlalu dalam). Mohon dicek/disesuaikan.
+sudah di-set 14.4V** (dikonfirmasi). `BATTERY_MIN_V` (default 10.7V) 
 
 ### Flame Sensor (AO, analog) — TIDAK lewat LLC
 
@@ -406,7 +404,7 @@ A7670E / SIM7600 (USB) ───────────────────
 [ ] Common ground: Pi, MCP3008, LLC, semua sensor, relay, PSU pressure sensor → satu GND
 [ ] LLC: HV=5V, LV=3.3V, HANYA 4 channel terpakai (CH1-CH4: MQ-2/MQ-135/Soil x2)
 [ ] MCP3008 VDD & VREF ke 3.3V (bukan 5V)
-[ ] MCP3008 CH0 sengaja kosong (spare)
+[ ] MCP3008 CH8 sengaja kosong (spare)
 [ ] R_BURDEN 100Ω terpasang benar di loop pressure sensor, tap LANGSUNG ke MCP3008 CH5 (TANPA LLC)
 [ ] PSU loop pressure sensor terpisah dari Pi/buck converter 5V
 [ ] Modul sensor tegangan: sisi ukur (anode/cathode) tap langsung ke Battery+/− (bukan lewat relay); sisi logic ("+"/"−") ke 3.3V/GND Pi; "S" LANGSUNG ke MCP3008 CH6 (TANPA LLC)

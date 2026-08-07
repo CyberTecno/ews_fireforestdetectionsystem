@@ -46,6 +46,6 @@ except KeyboardInterrupt:
 finally:
     adc.close()
 
-print("\n[SELESAI] Kalau channel yang ada sensornya (CH0-CH3) menunjukkan nilai")
+print("\n[SELESAI] Kalau channel yang ada sensornya (CH0-CH7) menunjukkan nilai")
 print("yang BERUBAH saat Anda tutup sensor dengan tangan / kabel disentuh,")
 print("berarti wiring SPI MCP3008 sudah benar.")

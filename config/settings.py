@@ -26,8 +26,6 @@ def _find_and_load_dotenv():
     return search_start
 
 _ROOT = _find_and_load_dotenv()
-print("ROOT :", _ROOT)
-print("EFWS_API_URL =", os.getenv("EFWS_API_URL"))
 
 
 # ─── Helper ──────────────────────────────────────────────────────────────────
@@ -133,14 +131,8 @@ RAINFALL_READ_INTERVAL = 2
 # lewat EFWS_BATTERY_SENSOR_MAX_V.
 BATTERY_SENSOR_MAX_V = _float("EFWS_BATTERY_SENSOR_MAX_V", 16.5)  # max input modul sensor (V) @ VREF 3.3V, rasio 1:5
 # BATTERY_MAX_V DIKONFIRMASI user: catu daya/baterai fisiknya max 14.4V
-# (sebelumnya 12.6V, sudah diganti). Ini di bawah batas aman modul (16.5V),
-# masih ada headroom ~2.1V.
-BATTERY_MAX_V        = _float("EFWS_BATTERY_MAX_V",        14.4)  # tegangan baterai penuh (V) -- DIKONFIRMASI user
-# BATTERY_MIN_V BELUM ikut dikonfirmasi ulang saat BATTERY_MAX_V diubah ke
-# 14.4V -- nilai 9.0V ini masih sisa dari pasangan lama (12.6V/9.0V). Kalau
-# baterai Anda LiFePO4 12V, titik "kosong" yang aman biasanya ~10-11V (bukan
-# 9V, itu terlalu dalam buat LiFePO4). Mohon dikonfirmasi/disesuaikan.
-BATTERY_MIN_V        = _float("EFWS_BATTERY_MIN_V",         9.0)  # tegangan baterai kosong (V) -- PERLU DIKONFIRMASI ULANG
+BATTERY_MAX_V        = _float("EFWS_BATTERY_MAX_V",        14.4)  # tegangan baterai penuh (V)
+BATTERY_MIN_V        = _float("EFWS_BATTERY_MIN_V",         10.7)  # tegangan baterai kosong (V)
 
 # ─── Submersible / Pressure Water Level Sensor — loop 4-20mA ───────────────
 # CATATAN: submersible.py (script berdiri sendiri, pakai channel & rumus yang

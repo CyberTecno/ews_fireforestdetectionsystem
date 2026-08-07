@@ -139,7 +139,9 @@ class MockBattery(_MockBase):
     def read(self) -> dict:
         sc  = self._scenario()
         pct = max(0.0, min(100.0, _jitter(self.PCT_BASE[sc], 0.04)))
-        v   = round(9.0 + pct / 100 * 3.6, 2)
+        # Range disesuaikan dengan hardware LiFePO4 (BATTERY_MAX_V=14.4V,
+        # BATTERY_MIN_V=10.7V sesuai settings.py)
+        v   = round(10.7 + pct / 100.0 * (14.4 - 10.7), 2)
         return {"voltage": v, "percent": round(pct, 1), "_mock": True, "_scenario": sc}
 
 

@@ -1,9 +1,9 @@
 from gpiozero import MCP3008
 import time
 
-# Kita asumsikan kabel kuning/hitam masuk ke channel 0 (CH0) di MCP3008
+# Kita asumsikan kabel kuning/hitam masuk ke channel 5 (CH4) di MCP3008
 # Jika Anda colok ke CH1, ganti angka 0 menjadi 1 di bawah ini
-adc = MCP3008(channel=0)
+adc = MCP3008(channel=4)
 
 # Masukkan nilai resistor yang Anda gunakan (misal 150 atau 100)
 RESISTOR_OHM = 100  
