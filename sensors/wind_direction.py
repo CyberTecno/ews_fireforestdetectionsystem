@@ -57,34 +57,70 @@ class WindDirectionSensor:
 
     def read(self) -> dict:
         """
-        SELALU return dict berisi ketiga field ini (schema tetap, sama
-        seperti sensor lain di project ini -- lihat null_sensor.py), TIDAK
-        PERNAH return None, supaya caller (main.py) tidak perlu penanganan
-        khusus untuk sensor ini.
+        Membaca arah angin terbaru dari UART.
+
+        Jika belum ada data di buffer saat fungsi dipanggil,
+        tunggu sampai WIND_DIR_TIMEOUT untuk mendapatkan minimal
+        satu baris data.
+
+        Cache bacaan valid terakhir tetap digunakan jika pada
+        siklus berikutnya tidak ada data baru.
         """
         try:
-            # Kuras SEMUA baris yang menumpuk di buffer, ambil yang PALING
-            # BARU -- kalau cuma baca baris pertama, di siklus baca yang
-            # jarang (default tiap beberapa menit) datanya akan basi/telat.
             latest_code = None
-            while self.ser.in_waiting > 0:
-                raw = self.ser.readline().decode("utf-8", errors="ignore").strip()
+
+            # ---------------------------------------------------------
+            # 1. Tunggu data pertama jika buffer masih kosong
+            # ---------------------------------------------------------
+            if self.ser.in_waiting == 0:
+                raw = self.ser.readline().decode(
+                    "utf-8",
+                    errors="ignore"
+                ).strip()
+
                 if raw.startswith("*") and raw.endswith("#"):
                     angka_str = raw[1:-1]
+
                     if angka_str.isdigit():
                         latest_code = int(angka_str)
 
+            # ---------------------------------------------------------
+            # 2. Kuras semua data yang masih tersisa di buffer
+            #    supaya kita mengambil data PALING BARU
+            # ---------------------------------------------------------
+            while self.ser.in_waiting > 0:
+                raw = self.ser.readline().decode(
+                    "utf-8",
+                    errors="ignore"
+                ).strip()
+
+                if raw.startswith("*") and raw.endswith("#"):
+                    angka_str = raw[1:-1]
+
+                    if angka_str.isdigit():
+                        latest_code = int(angka_str)
+
+            # ---------------------------------------------------------
+            # 3. Kalau mendapatkan kode valid, update cache
+            # ---------------------------------------------------------
             if latest_code is not None:
                 abbr, name = self._decode(latest_code)
+
                 self._last = {
                     "direction_code": latest_code,
                     "direction_abbr": abbr,
                     "direction_name": name,
                 }
 
+            # ---------------------------------------------------------
+            # 4. Kalau punya cache, gunakan bacaan terakhir
+            # ---------------------------------------------------------
             if self._last is not None:
                 return dict(self._last)
 
+            # ---------------------------------------------------------
+            # 5. Benar-benar belum pernah mendapatkan data
+            # ---------------------------------------------------------
             return {
                 "direction_code": None,
                 "direction_abbr": None,
@@ -99,8 +135,6 @@ class WindDirectionSensor:
                 "direction_name": None,
                 "error": str(e),
             }
-
-
 # Blok untuk pengetesan langsung (hardware check manual, BUKAN pytest --
 # lihat tests/hardware_checks/ untuk konvensi penamaan check_*.py project ini)
 if __name__ == "__main__":
