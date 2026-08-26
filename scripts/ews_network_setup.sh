@@ -210,25 +210,68 @@ EOF
     log_gps "Cache ditulis (no fix): $reason"
 }
 
+# ── Helper: Cari port AT yang tidak sibuk ────────────────────
+find_at_port() {
+    local default_port="$1"
+    local candidates="$default_port /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1"
+    local checked=" "
+
+    for p in $candidates; do
+        if [ -z "$p" ] || [ ! -e "$p" ]; then
+            continue
+        fi
+
+        # Hindari cek port yang sama dua kali
+        if echo "$checked" | grep -q " $p "; then
+            continue
+        fi
+        checked="$checked$p "
+
+        # Cek apakah dipakai proses lain (contoh: ModemManager)
+        if fuser "$p" > /dev/null 2>&1; then
+            continue
+        fi
+
+        # Coba seting stty
+        stty -F "$p" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || continue
+
+        # Coba kirim AT dalam subshell
+        (
+            exec 7<>"$p" || exit 1
+            printf 'AT\r\n' >&7
+            sleep 0.5
+            resp=$(dd <&7 count=1 bs=512 iflag=nonblock 2>/dev/null || true)
+            if echo "$resp" | grep -q "OK"; then
+                exit 0
+            fi
+            exit 1
+        ) 2>/dev/null
+
+        if [ $? -eq 0 ]; then
+            echo "$p"
+            return 0
+        fi
+    done
+
+    echo ""
+    return 1
+}
+
 # ── GPS fetch — fungsi utama ─────────────────────────────────
 gps_fetch() {
-    local port="$1"
+    local config_port="$1"
+    local port
 
-    # Cek port ada
-    if [ ! -e "$port" ]; then
-        log_gps "Port $port tidak ditemukan. GPS skip."
-        write_gps_cache_fallback "port_not_found:$port"
+    log_gps "Mencari port AT yang bebas (ModemManager mungkin mengunci $config_port)..."
+    port=$(find_at_port "$config_port")
+
+    if [ -z "$port" ]; then
+        log_gps "Tidak ada port AT yang bebas dan merespons. GPS skip."
+        write_gps_cache_fallback "no_available_at_port"
         return 0
     fi
 
-    # Cek port tidak dipakai proses lain
-    if fuser "$port" > /dev/null 2>&1; then
-        log_gps "Port $port sedang dipakai proses lain. GPS skip."
-        write_gps_cache_fallback "port_busy:$port"
-        return 0
-    fi
-
-    log_gps "Memulai GPS fetch via AT command ($port)..."
+    log_gps "Menggunakan port AT: $port"
 
     # Konfigurasi serial port
     stty -F "$port" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || {
@@ -244,7 +287,7 @@ gps_fetch() {
         return 0
     }
 
-    # Test AT dasar
+    # Test AT dasar (sudah dipastikan oleh find_at_port, tapi pastikan lagi di fd ini)
     printf 'AT\r\n' >&7
     sleep 1
     local at_resp

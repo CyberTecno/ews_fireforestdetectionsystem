@@ -96,20 +96,56 @@ if [ -f "$GPS_CACHE_FILE" ]; then
     fi
 fi
 
-log "Mulai GPS refresh (port $SIM_AT_PORT)..."
+# ── Helper: Cari port AT yang tidak sibuk ────────────────────
+find_at_port() {
+    local default_port="$1"
+    local candidates="$default_port /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1"
+    local checked=" "
 
-# ── Cek port ────────────────────────────────────────────────
-if [ ! -e "$SIM_AT_PORT" ]; then
-    log "Port $SIM_AT_PORT tidak ada. Skip."
-    write_fallback "port_not_found"
+    for p in $candidates; do
+        if [ -z "$p" ] || [ ! -e "$p" ]; then
+            continue
+        fi
+        if echo "$checked" | grep -q " $p "; then
+            continue
+        fi
+        checked="$checked$p "
+
+        if fuser "$p" > /dev/null 2>&1; then
+            continue
+        fi
+
+        stty -F "$p" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || continue
+
+        (
+            exec 7<>"$p" || exit 1
+            printf 'AT\r\n' >&7
+            sleep 0.5
+            resp=$(dd <&7 count=1 bs=512 iflag=nonblock 2>/dev/null || true)
+            if echo "$resp" | grep -q "OK"; then
+                exit 0
+            fi
+            exit 1
+        ) 2>/dev/null
+
+        if [ $? -eq 0 ]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
+
+log "Mulai mencari port AT yang bebas (ModemManager mungkin mengunci $SIM_AT_PORT)..."
+
+SIM_AT_PORT=$(find_at_port "$SIM_AT_PORT")
+if [ -z "$SIM_AT_PORT" ]; then
+    log "Tidak menemukan port AT yang bebas dan merespons. Skip."
+    write_fallback "no_available_at_port"
     exit 0
 fi
 
-if fuser "$SIM_AT_PORT" > /dev/null 2>&1; then
-    log "Port $SIM_AT_PORT dipakai proses lain. Skip."
-    write_fallback "port_busy"
-    exit 0
-fi
+log "Menggunakan port AT: $SIM_AT_PORT"
 
 # ── Konfigurasi port ────────────────────────────────────────
 stty -F "$SIM_AT_PORT" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || {
@@ -124,15 +160,6 @@ exec 7<>"$SIM_AT_PORT" 2>/dev/null || {
     exit 0
 }
 
-# ── Test AT ─────────────────────────────────────────────────
-printf 'AT\r\n' >&7; sleep 1
-AT_RESP=$(dd <&7 count=1 bs=512 iflag=nonblock 2>/dev/null || true)
-if ! echo "$AT_RESP" | grep -q "OK"; then
-    log "Modem tidak merespons AT."
-    exec 7>&-
-    write_fallback "no_at_response"
-    exit 0
-fi
 
 # ── Pastikan GPS ON ─────────────────────────────────────────
 printf 'AT+CGPS?\r\n' >&7; sleep 1
