@@ -79,15 +79,24 @@ def _calc_smoke_level(mq2_ppm, mq135_ppm):
     return round(min(raw,100),2)
 
 
-# ─── SIM factory (auto-detect A7670E atau SIM7600) ───────────────
-def _load_sim():
-    from communication.sim_detector import detect_sim
+# ─── GPS cache reader (baca dari file JSON yg ditulis ews_network_setup.sh) ──
+def _read_gps_cache() -> "dict | None":
+    """
+    Baca file cache GPS yang ditulis oleh ews_network_setup.sh / gps_refresh.sh.
+    Return dict GPS jika fix=true, atau None jika tidak ada / fix=false.
+    main.py tidak pernah membuka serial port AT command secara langsung.
+    """
+    cache_path = settings.GPS_CACHE_FILE
     try:
-        sim = detect_sim()
-        logger.info("SIM modul: %s @ %s", sim.module.upper(), sim.port)
-        return sim
+        with open(cache_path) as f:
+            data = json.load(f)
+        if data.get("fix") is True:
+            return data
+        return None
+    except FileNotFoundError:
+        return None
     except Exception as e:
-        logger.warning("SIM tidak bisa diinisialisasi: %s — GPS dinonaktifkan.", e)
+        logger.debug("GPS cache read error: %s", e)
         return None
 
 
@@ -183,11 +192,6 @@ class EFWS:
         self.sensors, self.alarm  = _load_sensors_and_alarm()
         self.api                  = APIPublisher()
         self.db                   = DBManager()
-        self.sim                  = _load_sim()   # auto-detect A7670E atau SIM7600
-        # Diaktifkan lagi setelah scan_ports() dipatch untuk mengecualikan
-        # ANEMOMETER_PORT dari daftar kandidat -- sebelumnya di-None-kan karena
-        # scan sempat ikut membuka port anemometer dan mengacaukan Modbus RTU.
-        # Lihat communication/sim_detector.py::scan_ports().
 
         self._critical_streak = 0
         self._stop_flag = threading.Event()
@@ -233,9 +237,9 @@ class EFWS:
         # diketahui daripada langsung jatuh ke koordinat statis di config.
         self._last_gps_fix_at = None
 
-        logger.info("EFWS initialised. Device: %s | Mode: %s | SIM: %s",
+        logger.info("EFWS initialised. Device: %s | Mode: %s | GPS cache: %s",
                     settings.DEVICE_ID, settings.RUN_MODE,
-                    self.sim.module.upper() if self.sim else "none")
+                    settings.GPS_CACHE_FILE)
 
         # Thread terpisah khusus retry offline queue tiap
         # EFWS_CONNECTIVITY_CHECK_SEC (2 menit) -- SENGAJA independen dari
@@ -403,53 +407,55 @@ class EFWS:
                              traceback.format_exc())
             self._stop_flag.wait(interval)
 
-    # ─── GPS refresh (dipanggil HANYA oleh _location_loop, bukan sampling) ──
+    # ─── GPS refresh (baca cache dari ews_network_setup/gps_refresh.sh) ────
     def _update_gps(self):
-        if self.sim is None:
-            self._gps_fallback(reason="SIM/GPS tidak tersedia")
+        """
+        Baca posisi GPS dari cache file yang ditulis oleh:
+          - ews_network_setup.sh (saat boot)
+          - gps_refresh.sh (setiap 30 menit via systemd timer)
+
+        main.py TIDAK membuka serial port AT command secara langsung.
+        GPS fetch adalah tanggung jawab script bash, bukan Python.
+
+        Fallback chain:
+          1) Cache file ada + fix=true  → pakai koordinat dari cache
+          2) Cache file ada + fix=false  → pakai posisi lama (gps_cached)
+          3) Tidak ada cache sama sekali  → pakai .env (config)
+        """
+        if settings.RUN_MODE == "mock":
+            # Mode mock: generate posisi simulasi
+            self._location = {
+                "lat":    settings.DEVICE_LOCATION["lat"] or -1.265400,
+                "lon":    settings.DEVICE_LOCATION["lon"] or 116.831200,
+                "altitude_m": 8.2,
+                "source": "mock",
+                "fix":    True,
+            }
+            self._last_gps_fix_at = time.time()
+            logger.info("📍 [GPS] Mode MOCK: lat=%.6f, lon=%.6f",
+                        self._location["lat"], self._location["lon"])
             return
 
-        module_name = self.sim.module.upper() if hasattr(self.sim, "module") else "SIM"
-        attempts = settings.GPS_FIX_ATTEMPTS
+        result = _read_gps_cache()
 
-        for attempt in range(1, attempts + 1):
+        if result is not None:
+            # Ada fix dari cache
+            cache_age_min = (time.time() - result.get("timestamp", 0)) / 60
+            self._location = {
+                "lat":        result["lat"],
+                "lon":        result["lon"],
+                "altitude_m": result.get("altitude_m"),
+                "source":     "gps",
+                "fix":        True,
+            }
+            self._last_gps_fix_at = result.get("timestamp") or time.time()
             logger.info(
-                "📡 GPS percobaan %d/%d dari %s (port=%s, timeout %ds)...",
-                attempt, attempts, module_name, getattr(self.sim, "port", "?"),
-                settings.GPS_TIMEOUT_SEC,
+                "📍 [GPS] Cache valid — lat=%.6f, lon=%.6f | usia cache: %.1f menit",
+                result["lat"], result["lon"], cache_age_min,
             )
-            try:
-                result = self.sim.get_gps(timeout=settings.GPS_TIMEOUT_SEC)
-            except Exception as e:
-                logger.warning("📍 GPS error dari %s (percobaan %d/%d): %s",
-                               module_name, attempt, attempts, e)
-                result = {"fix": False, "reason": str(e)}
+        else:
+            self._gps_fallback(reason="Cache GPS tidak ada atau fix=false")
 
-            if result.get("fix"):
-                self._location = {
-                    "lat":        result["lat"],
-                    "lon":        result["lon"],
-                    "altitude_m": result.get("altitude_m"),
-                    "source":     "gps",
-                    "fix":        True,
-                }
-                self._last_gps_fix_at = time.time()
-                logger.info(
-                    "📍 GPS FIX NYATA (percobaan %d/%d) dari %s: lat=%.6f, lon=%.6f, alt=%sm%s",
-                    attempt, attempts, module_name, result["lat"], result["lon"],
-                    result.get("altitude_m"),
-                    " | mock=True (bukan hardware asli)" if result.get("_mock") else "",
-                )
-                if result.get("raw"):
-                    logger.debug("📍 Raw +CGPSINFO dari %s: %s", module_name, result["raw"])
-                return  # sukses -- tidak perlu percobaan berikutnya
-
-            logger.warning("📍 GPS percobaan %d/%d dari %s TIDAK fix (%s).",
-                           attempt, attempts, module_name, result.get("reason"))
-            if attempt < attempts:
-                self._stop_flag.wait(settings.GPS_RETRY_DELAY_SEC)
-
-        self._gps_fallback(reason=f"semua {attempts} percobaan GPS gagal fix")
 
     def _gps_fallback(self, reason: str):
         """
@@ -492,7 +498,7 @@ class EFWS:
         for key, sensor in self.sensors.items():
             try:
                 data[key] = sensor.read()
-                logger.debug(f"Sensor '{key}' read: {data[key]}")
+                logger.debug("Sensor '%s' read: %s", key, data[key])
             except Exception as e:
                 logger.error("Sensor '%s' read error: %s", key, e)
                 data[key] = {"error": str(e)}
@@ -533,11 +539,14 @@ class EFWS:
             "temperature": _exceeds(data["bme280"].get("temperature_c"), t["temperatureDangerThreshold"], lower_is_worse=False),
             "humidity":    _exceeds(data["bme280"].get("humidity_percent"), t["humidityDangerThreshold"], lower_is_worse=True),
             "water":       _exceeds(data["pressure"].get("depth_m"), t["waterDangerThreshold"], lower_is_worse=True),
+            "pressure":    _exceeds(data["pressure"].get("pressure_bar"), t["pressureDangerThreshold"], lower_is_worse=True),
             "soil_surface": _exceeds(surface, t["soilMoistureDangerThreshold"]["surface"], lower_is_worse=True),
             "soil_deep":    _exceeds(deep,    t["soilMoistureDangerThreshold"]["deep"],    lower_is_worse=True),
             "wind":        _exceeds(data["wind"].get("speed_ms"), t["windDangerThreshold"], lower_is_worse=False),
-            "pressure": _exceeds(data["pressure"].get("pressure_bar"),t["pressureDangerThreshold"],lower_is_worse=True,),
-            "rainfall": _exceeds(data["rainfall"].get("rainfall_last_hour_mm"),t["rainfallDangerThreshold"],lower_is_worse=False,),
+            # rainfall_last_hour_mm (BUKAN delta-sejak-telemetry) -- lihat
+            # _rainfallDangerThreshold_note di thresholds.json kenapa beda
+            # dari nilai "rainfall" yang dikirim di payload API.
+            "rainfall":    _exceeds(data["rainfall"].get("rainfall_last_hour_mm"), t["rainfallDangerThreshold"], lower_is_worse=False),
         }
 
         triggered = [k for k, v in checks.items() if v]
@@ -764,11 +773,9 @@ class EFWS:
             logger.critical("EFWS crash!\n%s", traceback.format_exc())
         finally:
             self._stop_flag.set()
-            self._telemetry_wake.set()  # bangunkan Telemetry Publisher supaya langsung keluar, tidak nunggu interval
+            self._telemetry_wake.set()  # bangunkan Telemetry Publisher supaya langsung keluar
             self.alarm.silence()
             self.api.close()
-            if self.sim:
-                self.sim.close()
             self.db.close()
             logger.info("EFWS shutdown selesai.")
 

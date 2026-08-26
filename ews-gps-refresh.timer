@@ -1,0 +1,13 @@
+[Unit]
+Description=EFWS GPS Refresh Timer (every 30 minutes)
+
+[Timer]
+# Jalankan pertama kali 5 menit setelah boot (beri waktu ews_network_setup.sh selesai)
+OnBootSec=5min
+# Kemudian setiap 30 menit
+OnUnitActiveSec=30min
+# Tidak akumulasi run yang terlewat (kalau Raspberry Pi mati saat timer harusnya jalan)
+AccuracySec=60
+
+[Install]
+WantedBy=timers.target

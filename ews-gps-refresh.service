@@ -1,0 +1,18 @@
+[Unit]
+Description=EFWS GPS Refresh (every 30 minutes)
+After=gsm-connect.service
+Requires=gsm-connect.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+ExecStart=/home/uwfadmin/ews/scripts/gps_refresh.sh
+
+# Baca EFWS_SIM_PORT dan EFWS_GPS_CACHE dari .env jika ada
+EnvironmentFile=-/home/uwfadmin/ews/.env
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ews-gps

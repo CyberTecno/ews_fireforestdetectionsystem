@@ -46,13 +46,11 @@ def resolve_active_thresholds(local: dict, remote_config: Optional[dict]) -> dic
     resolved["waterDangerThreshold"] = _pick(
         remote.get("waterDangerThreshold"), local["waterDangerThreshold"]
     )
-
     resolved["pressureDangerThreshold"] = _pick(
-        remote.get("pressureDangerThreshold"),local["pressureDangerThreshold"]
+        remote.get("pressureDangerThreshold"), local["pressureDangerThreshold"]
     )
-
     resolved["rainfallDangerThreshold"] = _pick(
-        remote.get("rainfallDangerThreshold"),local["rainfallDangerThreshold"]
+        remote.get("rainfallDangerThreshold"), local["rainfallDangerThreshold"]
     )
 
     # soilMoistureDangerThreshold: nested dict {surface, deep} -- merge per sub-field juga,

@@ -62,14 +62,12 @@ DEVICE_LOCATION = {
     "lon": _float("EFWS_LON", 0.0),
 }
 
-# ─── GPS acquisition (Location Publisher) ──────────────────────────────────
-# Dikonfirmasi dari pengalaman lapangan user: cold-fix GPS lewat modul
-# A7670E/SIM7600 biasanya butuh 2 percobaan, masing-masing 2-5 menit. Jadi
-# defaultnya BUKAN satu percobaan singkat -- 2 percobaan @ 4 menit (tengah
-# rentang 2-5 menit), baru dianggap gagal kalau keduanya tidak fix.
-GPS_FIX_ATTEMPTS    = _int("EFWS_GPS_FIX_ATTEMPTS",    2)
-GPS_TIMEOUT_SEC     = _int("EFWS_GPS_TIMEOUT_SEC",     240)  # detik PER percobaan (4 menit)
-GPS_RETRY_DELAY_SEC = _int("EFWS_GPS_RETRY_DELAY_SEC", 10)   # jeda sebelum percobaan berikutnya
+# ─── GPS — posisi dibaca dari cache file (ditulis oleh ews_network_setup.sh) ───
+# ews_network_setup.sh (boot) + gps_refresh.sh (setiap 30 menit via systemd timer)
+# mengambil GPS via AT command dan menulis hasilnya ke GPS_CACHE_FILE.
+# main.py hanya MEMBACA file ini — tidak pernah membuka serial port AT.
+# Fallback: jika cache tidak ada atau fix=false, pakai EFWS_LAT/EFWS_LON dari .env.
+GPS_CACHE_FILE = _opt("EFWS_GPS_CACHE", "/tmp/ews_gps_cache.json")
 
 # ─── Mode operasi ────────────────────────────────────────────────────────────
 RUN_MODE = _opt("EFWS_RUN_MODE", "mock")
@@ -79,11 +77,10 @@ I2C_BUS        = _int("EFWS_I2C_BUS", 1)
 BME280_ADDRESS = int(_opt("EFWS_BME280_ADDR", "0x76"), 16)
 
 # ─── SPI / MCP3008 (ADC 8-channel, SATU Logic Level Converter) ─────────────
-# Versi hardware: 1x MCP3008, 1x LLC (min. 6-channel, mis. modul 8-ch),
+# versi hardware: 1x MCP3008, 1x LLC (min. 6-channel, mis. modul 8-ch),
 # 2x soil probe, MQ-2, MQ-135, anemometer RS485 (langsung USB, tanpa LLC),
 # submersible pressure sensor (loop 4-20mA + burden resistor), modul sensor
-# tegangan baterai DC 0-25V, dan modem 4G (A7670E ATAU SIM7600 — auto-detect,
-# hanya satu yang dipasang).
+# tegangan baterai DC 0-25V, dan modem 4G SIM7600 (ttyUSB2 = AT command port).
 #
 #   LLC (HV=5V, LV=3.3V) — 4 channel, HANYA untuk sensor analog 0-5V yang
 #   genuinely butuh step-down (MQ-2, MQ-135, soil x2). Pressure & Battery
@@ -147,6 +144,7 @@ PRESSURE_RANGE_M    = _float("EFWS_PRESSURE_RANGE_M",      3.0)  # rentang penuh
 # Keputusan user: pakai AO lewat MCP3008 CH6, BUKAN lewat GPIO digital DO.
 # Threshold voltase BELUM dikalibrasi ke unit fisik -- lihat comment
 # kalibrasi di sensors/flame.py sebelum dipakai di lapangan.
+ADC_CHANNEL_FLAME_AO   = _int("EFWS_ADC_FLAME_AO", 6)          # MCP3008 CH6, langsung tanpa LLC. CH7 = spare.
 FLAME_AO_THRESHOLD_V   = _float("EFWS_FLAME_AO_THRESHOLD_V", 1.65)  # PERKIRAAN AWAL (setengah VREF) -- WAJIB dikalibrasi ulang di lapangan
 
 # ─── smokeLevel: gabungan MQ-2 + MQ-135 → persentase 0-100% ────────────────
@@ -221,10 +219,12 @@ ANEMOMETER_FUNCTION_CODE = _int(
     3
 )
 
-# ─── A7670E / SIM7670E 4G LTE Cat-1 ──────────────────────────────────────────────────────────
-A7670E_AT_PORT  = _opt("EFWS_SIM_PORT", "/dev/ttyUSB2")
-A7670E_BAUDRATE = _int("EFWS_A7670E_BAUD", 115200)
-APN              = _opt("EFWS_APN", "internet")
+# ─── SIM7600 4G LTE (kartu biasa, APN: internet) ────────────────────────────
+# ttyUSB2 = AT command port SIM7600 (Waveshare 4G HAT)
+# ttyUSB0 = DM, ttyUSB1 = AT secondary, ttyUSB3 = PPP/modem (jangan dipakai)
+SIM7600_AT_PORT  = _opt("EFWS_SIM_PORT",    "/dev/ttyUSB2")
+SIM7600_BAUDRATE = _int("EFWS_SIM_BAUD",     115200)
+APN              = _opt("EFWS_APN",          "internet")
 
 # ─── REST API ────────────────────────────────────────────────────────────────
 API_BASE_URL       = _req("EFWS_API_URL")

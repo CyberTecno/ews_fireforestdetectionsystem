@@ -1,5 +1,5 @@
 [Unit]
-Description=EFWS SIM7600 IoT Primary Connection
+Description=EFWS Network Setup (SIM7600 + APN internet)
 After=ModemManager.service NetworkManager.service
 Wants=ModemManager.service NetworkManager.service
 
@@ -9,16 +9,13 @@ Type=oneshot
 User=root
 Group=root
 
-ExecStart=/home/uwfadmin/ews/scripts/gsm_connect.sh
+ExecStart=/home/uwfadmin/ews/scripts/ews_network_setup.sh
 
-TimeoutStartSec=120
-
-Restart=on-failure
-RestartSec=10
+TimeoutStartSec=180
 
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=ews-iot-gsm
+SyslogIdentifier=ews-gsm
 
 RemainAfterExit=yes
 
