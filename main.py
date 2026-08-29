@@ -611,7 +611,6 @@ class EFWS:
                     "windSpeed": wind.get("speed_ms") if wind.get("speed_ms") is not None else 0,
                     "windDirection": data.get("wind_dir", {}).get("direction_abbr"),
                     "batteryLevel": battery.get("percent"),
-                    "flame": flame.get("flame_detected"),
                     "waterLevel": pressure.get("depth_m"),
                     "pressure": pressure.get("pressure_bar"),
                     # "rainfall" = mm hujan SEJAK pengiriman telemetry SEBELUMNYA
