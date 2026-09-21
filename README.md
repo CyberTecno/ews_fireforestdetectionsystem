@@ -52,4 +52,4 @@ efws/
 
 ## Documentation
 
-Start with the [documentation guide](docs/README.md) for wiring, power, deployment, architecture, and modem setup.
+Start with the [wiring guide](docs/Pinout.md), then see [power](docs/PowerSystem.md), [deployment](docs/Deployment.md), [architecture](docs/Architecture.md), and [modem setup](docs/Setup-SIM7600.md).
