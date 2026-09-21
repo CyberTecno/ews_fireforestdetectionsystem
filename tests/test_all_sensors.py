@@ -1,9 +1,9 @@
 """
-TEST — Semua sensor sekaligus (hardware, satu putaran baca)
+TEST — All sensors at once (hardware, one read cycle)
 
-Jalankan PALING TERAKHIR setelah semua test individual lulus.
-Mensimulasikan satu siklus baca lengkap seperti yang dilakukan main.py,
-termasuk kalkulasi smokeLevel dari MQ-2 + MQ-135.
+Run LAST after all individual tests have passed.
+Simulating one complete read cycle like main.py does,
+includes smokeLevel calculations from MQ-2 + MQ-135.
 
 Usage: python3 tests/test_all_sensors.py
 """
@@ -18,7 +18,7 @@ def smoke(mq2, mq135):
     return round(min((n2 * settings.SMOKE_WEIGHT_MQ2 + n135 * settings.SMOKE_WEIGHT_MQ135) * 100, 100.0), 2)
 
 print("=" * 60)
-print("  TEST SEMUA SENSOR (hardware, satu putaran)")
+print("TEST ALL SENSORS (hardware, one cycle)")
 print("=" * 60)
 
 TESTS = [
@@ -43,10 +43,10 @@ for name, mod_path, cls_name in TESTS:
         results[name] = "OK"
         sensor_data[name] = reading
     except Exception as e:
-        print(f"  → GAGAL: {e}")
-        results[name] = "GAGAL"
+        print(f"→ FAILED:{e}")
+        results[name] = "FAIL"
 
-# smokeLevel dari MQ-2 + MQ-135
+# smokeLevel of MQ-2 + MQ-135
 if "MQ-2" in sensor_data and "MQ-135" in sensor_data:
     sl = smoke(sensor_data["MQ-2"].get("ppm",0), sensor_data["MQ-135"].get("ppm",0))
     sl_status = "CRITICAL" if sl>=70 else "WARNING" if sl>=60 else "normal"
@@ -55,17 +55,17 @@ if "MQ-2" in sensor_data and "MQ-135" in sensor_data:
     print(f"    Warning≥{settings.SMOKE_WARNING_PCT}%, Critical≥{settings.SMOKE_CRITICAL_PCT}%")
 
 print("\n" + "=" * 60)
-print("  RINGKASAN")
+print("SUMMARY")
 print("=" * 60)
 for name, status in results.items():
     print(f"  {'✅' if status=='OK' else '❌'} {status:6s}  {name}")
 
-if "GAGAL" in results.values():
-    print("\nUntuk sensor GAGAL:")
-    print("  - SPI: ls /dev/spidev*  (MQ-2/MQ-135/soil/pressure — semua lewat MCP3008)")
+if "FAIL" in results.values():
+    print("\nFor FAILED sensor:")
+    print("- SPI: ls /dev/spidev* (MQ-2/MQ-135/soil/pressure — all via MCP3008)")
     print("  - I2C: i2cdetect -y 1   (BME280)")
     print("  - USB: ls /dev/ttyUSB*  (anemometer RS485)")
-    print("  - Cek docs/Pinout.md untuk wiring lengkap")
+    print("- Check docs/Pinout.md for complete wiring")
     sys.exit(1)
 else:
-    print("\n✅ Semua sensor OK. Siap jalankan main.py.")
+    print("\n✅ All sensors OK. Ready to run main.py.")

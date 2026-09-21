@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # ============================================================
-# EFWS — GPS Refresh (dijalankan setiap 30 menit oleh systemd timer)
+# EFWS — GPS Refresh (run every 30 minutes by systemd timer)
 #
 # Tugas:
-#   - Ambil posisi GPS terbaru dari SIM7600 via AT command
-#   - Simpan ke GPS_CACHE_FILE (JSON)
-#   - main.py membaca file ini setiap kali Location Publisher jalan
+#   - Retrieve the latest GPS position from SIM7600 via AT command
+#   - Save to GPS_CACHE_FILE (JSON)
+#   - main.py reads this file every time Location Publisher runs
 #
-# Tidak perlu setup jaringan — hanya GPS fetch.
-# Bisa juga dijalankan manual: sudo bash /home/uwfadmin/ews/scripts/gps_refresh.sh
+# No network setup required — just GPS fetch.
+# Can also be run manually: sudo bash /home/uwfadmin/ews/scripts/gps_refresh.sh
 # ============================================================
 
 set -u
@@ -19,10 +19,10 @@ SIM_BAUD="${EFWS_SIM_BAUD:-115200}"
 GPS_CACHE_FILE="${EFWS_GPS_CACHE:-/tmp/ews_gps_cache.json}"
 
 GPS_ATTEMPTS=3
-GPS_WARMUP_FIRST=60      # detik warm-up percobaan pertama (lebih singkat dari boot, GPS sudah pre-warm)
-GPS_POLL_INTERVAL=5      # detik antar baca AT+CGPSINFO
-GPS_POLL_TIMEOUT=60      # detik maks per percobaan
-GPS_RETRY_WAIT=90        # detik tunggu antar percobaan gagal
+GPS_WARMUP_FIRST=60      # first-attempt warm-up seconds (shorter than boot; GPS is pre-warmed)
+GPS_POLL_INTERVAL=5      # seconds between AT+CGPSINFO reads
+GPS_POLL_TIMEOUT=60      # maximum seconds per attempt
+GPS_RETRY_WAIT=90        # seconds to wait between failed attempts
 
 LOG_DIR="/home/uwfadmin/ews/logs"
 LOG_FILE="${LOG_DIR}/gps_refresh.log"
@@ -32,7 +32,7 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GPS-refresh] $*" | tee -a "$LOG_FILE"
 }
 
-# ── Parse AT+CGPSINFO → JSON (sama dengan ews_network_setup.sh) ──
+# ── Parse AT+CGPSINFO → JSON (same as ews_network_setup.sh) ──
 parse_cgpsinfo() {
     local raw="$1"
     local line
@@ -80,10 +80,10 @@ write_fallback() {
     cat > "$GPS_CACHE_FILE" <<EOF
 {"fix":false,"lat":null,"lon":null,"reason":"${reason}","source":"none","timestamp":$(date +%s)}
 EOF
-    log "Cache fallback ditulis: $reason"
+    log "Fallback cache written: $reason"
 }
 
-# ── Cek apakah cache valid dan masih fresh (< 35 menit) ─────
+# ── Check whether the cache is valid and still fresh (< 35 minutes) ─────
 if [ -f "$GPS_CACHE_FILE" ]; then
     CACHE_TS=$(grep -oP '"timestamp":\K[0-9]+' "$GPS_CACHE_FILE" 2>/dev/null || echo 0)
     CACHE_FIX=$(grep -oP '"fix":\K(true|false)' "$GPS_CACHE_FILE" 2>/dev/null || echo "false")
@@ -91,12 +91,12 @@ if [ -f "$GPS_CACHE_FILE" ]; then
     AGE=$(( NOW - CACHE_TS ))
 
     if [ "$CACHE_FIX" = "true" ] && [ "$AGE" -lt 2100 ]; then
-        log "Cache GPS masih fresh ($((AGE/60)) menit), skip fetch."
+        log "Cache GPS is still fresh ($((AGE/60)) minutes), skip fetch."
         exit 0
     fi
 fi
 
-# ── Helper: Cari port AT yang tidak sibuk ────────────────────
+# ── Helper: Look for an AT port that is not busy ────────────────────
 find_at_port() {
     local default_port="$1"
     local candidates="$default_port /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1"
@@ -136,48 +136,48 @@ find_at_port() {
     return 1
 }
 
-log "Mulai mencari port AT yang bebas (ModemManager mungkin mengunci $SIM_AT_PORT)..."
+log "Start looking for a free AT port (ModemManager may be locking $SIM_AT_PORT)..."
 
 SIM_AT_PORT=$(find_at_port "$SIM_AT_PORT")
 if [ -z "$SIM_AT_PORT" ]; then
-    log "Tidak menemukan port AT yang bebas dan merespons. Skip."
+    log "Didn't find a free and responding AT port. Skip."
     write_fallback "no_available_at_port"
     exit 0
 fi
 
-log "Menggunakan port AT: $SIM_AT_PORT"
+log "Using AT port: $SIM_AT_PORT"
 
-# ── Konfigurasi port ────────────────────────────────────────
+# ── Port configuration ──────────────────── ────────────────────
 stty -F "$SIM_AT_PORT" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || {
-    log "Gagal konfigurasi stty. Skip."
+    log "Stty configuration failed. Skip."
     write_fallback "stty_failed"
     exit 0
 }
 
 exec 7<>"$SIM_AT_PORT" 2>/dev/null || {
-    log "Gagal buka port. Skip."
+    log "Failed to open port. Skip."
     write_fallback "fd_failed"
     exit 0
 }
 
 
-# ── Pastikan GPS ON ─────────────────────────────────────────
+# ── Make sure GPS is ON ──────────────────── ─────────────────────
 printf 'AT+CGPS?\r\n' >&7; sleep 1
 dd <&7 count=1 bs=512 iflag=nonblock > /dev/null 2>&1 || true
 printf 'AT+CGPS=1\r\n' >&7; sleep 2
 dd <&7 count=1 bs=512 iflag=nonblock > /dev/null 2>&1 || true
 log "GPS engine ON."
 
-# ── 3 Percobaan fetch ────────────────────────────────────────
+# ── 3 Fetch attempts ──────────────────── ────────────────────
 FIX_FOUND=0
 GPS_JSON=""
 
 for attempt in 1 2 3; do
     if [ "$attempt" -eq 1 ]; then
-        log "Percobaan $attempt/$GPS_ATTEMPTS: warm-up ${GPS_WARMUP_FIRST}s..."
+        log "Experiment $attempt/$GPS_ATTEMPTS: warm-up ${GPS_WARMUP_FIRST}s..."
         sleep "$GPS_WARMUP_FIRST"
     else
-        log "Percobaan $attempt/$GPS_ATTEMPTS: tunggu ${GPS_RETRY_WAIT}s..."
+        log "Trial $attempt/$GPS_ATTEMPTS: wait ${GPS_RETRY_WAIT}s..."
         sleep "$GPS_RETRY_WAIT"
     fi
 
@@ -202,19 +202,19 @@ for attempt in 1 2 3; do
         log "  No fix (${elapsed}s/${GPS_POLL_TIMEOUT}s)..."
     done
 
-    log "Percobaan $attempt gagal."
+    log "Attempt $attempt failed."
 done
 
-# Matikan GPS (hemat daya)
+# Turn off GPS (power saving)
 printf 'AT+CGPS=0\r\n' >&7; sleep 1
 exec 7>&-
 
 if [ "$FIX_FOUND" -eq 1 ]; then
     echo "$GPS_JSON" > "$GPS_CACHE_FILE"
-    log "Cache disimpan: $GPS_CACHE_FILE"
+    log "Cache saved: $GPS_CACHE_FILE"
 else
     write_fallback "all_attempts_failed"
 fi
 
-log "GPS refresh selesai."
+log "GPS refresh completed."
 exit 0

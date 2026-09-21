@@ -3,52 +3,52 @@ from statistics import mean
 import time
 
 # ============================================================
-# KONFIGURASI MCP3008
+# MCP3008 CONFIGURATION
 # ============================================================
 
-# Sensor terhubung ke CH4
+# The sensor is connected to CH4
 ADC_CHANNEL = 4
 
-# Resistor shunt yang digunakan
+# Shunt resistor used
 RESISTOR_OHM = 100.0
 
-# Tegangan referensi MCP3008
+# Reference voltage MCP3008
 VREF = 3.3
 
 # ============================================================
-# KONFIGURASI SENSOR 4–20 mA
+# SENSOR CONFIGURATION 4–20 mA
 # ============================================================
 
-# Hasil pembacaan nol aktual dari sensor
+# The actual zero reading from the sensor
 ZERO_CURRENT_MA = 4.05
 
-# Toleransi di sekitar titik nol
-# Sampai 4.10 mA dianggap 0 mm
+# Tolerance around zero point
+# Up to 4.10 mA is considered 0 mm
 ZERO_TOLERANCE_MA = 0.05
 
-# Arus maksimum sensor
+# Maximum sensor current
 MAX_CURRENT_MA = 20.0
 
-# Rentang pengukuran sensor
+# Sensor measuring range
 MAX_LEVEL_MM = 4000.0
 
-# Di bawah nilai ini dianggap sensor terputus
+# Below this value is considered the sensor disconnected
 DISCONNECTED_LIMIT_MA = 3.5
 
-# Di atas nilai ini dianggap over-range
+# Above this value is considered over-range
 OVERRANGE_LIMIT_MA = 21.0
 
 # ============================================================
-# FILTER PEMBACAAN
+# READING FILTERS
 # ============================================================
 
-# Jumlah sampel untuk dirata-ratakan
+# Number of samples to average
 SAMPLE_COUNT = 20
 
-# Jeda antar-sampel
+# Delay between samples
 SAMPLE_DELAY = 0.01
 
-# Jeda antar-output
+# Delay between output lines
 LOOP_DELAY = 1.0
 
 adc = MCP3008(channel=ADC_CHANNEL)
@@ -56,8 +56,8 @@ adc = MCP3008(channel=ADC_CHANNEL)
 
 def read_average_voltage() -> float:
     """
-    Membaca tegangan MCP3008 beberapa kali,
-    lalu mengembalikan nilai rata-rata.
+Read the voltage MCP3008 several times,
+then returns the average value.
     """
     samples = []
 
@@ -71,7 +71,7 @@ def read_average_voltage() -> float:
 
 def voltage_to_current_ma(voltage: float) -> float:
     """
-    Mengubah tegangan resistor menjadi arus mA.
+Converts resistor voltage to mA current.
 
     Rumus:
     I = V / R
@@ -81,7 +81,7 @@ def voltage_to_current_ma(voltage: float) -> float:
 
 def current_to_level_mm(current_ma: float) -> float:
     """
-    Mengubah arus hasil kalibrasi menjadi level air.
+Converts the calibration result flow into water level.
 
     ZERO_CURRENT_MA = 0 mm
     MAX_CURRENT_MA  = 4000 mm
@@ -97,11 +97,11 @@ def current_to_level_mm(current_ma: float) -> float:
 
 def process_sensor(current_ma: float) -> tuple[float, str]:
     """
-    Menentukan level air dan status sensor.
+Determines water level and sensor status.
     """
 
     if current_ma < DISCONNECTED_LIMIT_MA:
-        return 0.0, "SENSOR TERPUTUS / TIDAK ADA ARUS"
+        return 0.0, "SENSOR DISCONNECTED / NO CURRENT"
 
     zero_limit_ma = ZERO_CURRENT_MA + ZERO_TOLERANCE_MA
 
@@ -109,7 +109,7 @@ def process_sensor(current_ma: float) -> tuple[float, str]:
         return 0.0, "OK - ZERO"
 
     if current_ma > OVERRANGE_LIMIT_MA:
-        return MAX_LEVEL_MM, "OVER-RANGE / PERIKSA WIRING"
+        return MAX_LEVEL_MM, "OVER-RANGE / CHECK WIRING"
 
     level_mm = current_to_level_mm(current_ma)
 
@@ -117,16 +117,16 @@ def process_sensor(current_ma: float) -> tuple[float, str]:
 
 
 def main() -> None:
-    print("=== TEST SENSOR LEVEL AIR 4–20 mA ===")
+    print("=== WATER LEVEL SENSOR TEST 4–20 mA ===")
     print(f"Channel MCP3008   : CH{ADC_CHANNEL}")
     print(f"Resistor shunt    : {RESISTOR_OHM:.1f} ohm")
     print(f"Zero current      : {ZERO_CURRENT_MA:.2f} mA")
     print(
-        f"Zero deadband     : sampai "
+        f"Zero deadband : until"
         f"{ZERO_CURRENT_MA + ZERO_TOLERANCE_MA:.2f} mA"
     )
-    print(f"Level maksimum    : {MAX_LEVEL_MM:.0f} mm")
-    print("Tekan Ctrl+C untuk berhenti.\n")
+    print(f"Maximum level :{MAX_LEVEL_MM:.0f} mm")
+    print("Press Ctrl+C to stop.\n")
 
     try:
         while True:
@@ -137,7 +137,7 @@ def main() -> None:
 
             print(
                 f"Volt: {voltage:.3f} V | "
-                f"Arus: {current_ma:.2f} mA | "
+                f"Current:{current_ma:.2f} mA | "
                 f"Level: {level_mm:.1f} mm | "
                 f"Status: {status}"
             )
@@ -145,14 +145,14 @@ def main() -> None:
             time.sleep(LOOP_DELAY)
 
     except KeyboardInterrupt:
-        print("\nProgram dihentikan oleh pengguna.")
+        print("\nProgram terminated by user.")
 
     except Exception as error:
         print(f"\nTerjadi error: {error}")
 
     finally:
         adc.close()
-        print("MCP3008 ditutup.")
+        print("MCP3008 closed.")
 
 
 if __name__ == "__main__":

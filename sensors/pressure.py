@@ -1,10 +1,10 @@
 """
 Submersible Water Level Pressure Sensor (4-20mA)
-Sensor loop-powered 2-kabel: 4mA=kosong, 20mA=penuh (PRESSURE_RANGE_M).
-Arus diubah tegangan lewat burden resistor, dibaca MCP3008 CH4 (lewat LLC).
+2-wire loop-powered sensor: 4mA=empty, 20mA=full (PRESSURE_RANGE_M).
+The current is changed to voltage via a burden resistor, read MCP3008 CH4 (via LLC).
 
-Jadi sekarang pakai get_mcp3008() yang
-sama seperti mq2.py/mq135.py/battery.py/soil.py.
+So now use get_mcp3008() which
+same as mq2.py/mq135.py/battery.py/soil.py.
 """
 from config import settings
 from sensors.mcp3008 import get_mcp3008
@@ -43,9 +43,9 @@ class PressureWaterSensor:
             depth_mm = max(0.0, min(self.range_m * 1000, depth_mm))
             depth_m = depth_mm / 1000.0
 
-        # Konversi hidrostatik standar: 1 meter kolom air ≈ 0.0980665 bar
-        # (rho_air=1000 kg/m3, g=9.80665 m/s2) -- rumus fisika baku, bukan
-        # kalibrasi khusus hardware ini.
+        # Standard hydrostatic conversion: 1 meter of water column ≈ 0.0980665 bar
+        # (rho_air=1000 kg/m3, g=9.80665 m/s2) -- standard physics formula, not
+        # special calibration of this hardware.
         pressure_bar = depth_m * 0.0980665
 
         return {

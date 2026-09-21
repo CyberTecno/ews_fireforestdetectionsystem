@@ -6,24 +6,24 @@ from config import settings
 
 class WindDirectionSensor:
     """
-    Sensor arah angin 4-kabel, UART:
+4-wire wind direction sensor, UART:
       VCC (merah) -> 3.3V
       GND (hitam) -> GND
       TX  (kuning) -> GPIO14 / pin 8  (RXD Raspberry Pi)
       RX  (hijau)  -> GPIO15 / pin 10 (TXD Raspberry Pi)
 
-    Protokol: baris teks "*<kode>#", kode 1-8 = N/NE/E/SE/S/SW/W/NW.
+Protocol: text line "*<code>#", code 1-8 = N/NE/E/SE/S/SW/W/NW.
 
-    CATATAN PENTING (Raspberry Pi 4 + UART GPIO14/15):
-    Secara default, /dev/serial0 di RPi4 nyambung ke mini-UART, yang
-    clock-nya ikut naik-turun mengikuti frekuensi VPU core -- baudrate bisa
-    ngaco/drift kalau tidak di-lock (core_freq=250 di /boot/config.txt), atau
-    port ini masih dipakai Bluetooth (default RPi4). Kalau sensor ini sering
-    kosong/datanya acak, itu gejala khasnya. Perlu dikonfirmasi: apakah
-    /boot/config.txt Anda sudah pakai dtoverlay=disable-bt (supaya PL011 full
-    UART pindah ke GPIO14/15) dan console serial (login shell lewat UART)
-    sudah dimatikan lewat raspi-config? Kalau belum, sensor ini berisiko
-    kirim data sampah/putus-putus walau wiring & kode-nya benar.
+IMPORTANT NOTE (Raspberry Pi 4 + UART GPIO14/15):
+By default, /dev/serial0 on the RPi4 connects to mini-UART, which
+The clock also goes up and down according to the VPU core frequency -- baudrate is possible
+ngaco/drift if not locked (core_freq=250 on /boot/config.txt), or
+This port is still used by Bluetooth (RPi4 default). If this sensor occurs frequently
+empty/datanya random, that's a typical symptom. Need to confirm: whether
+/boot/config.txt You have used dtoverlay=disable-bt (so that PL011 is full
+UART moved to GPIO14/15) and console serial (login shell via UART)
+Has it been turned off via raspi-config? If not, this sensor is risky
+sends garbage/intermittent data even when the wiring and code are correct.
     """
 
     def __init__(self):
@@ -32,11 +32,11 @@ class WindDirectionSensor:
             settings.WIND_DIR_BAUDRATE,
             timeout=settings.WIND_DIR_TIMEOUT,
         )
-        # Bersihkan sisa data lama yang mungkin nyangkut di buffer OS.
+        # Clean remaining old data that may be stuck in the OS buffer.
         self.ser.reset_input_buffer()
-        # Cache bacaan valid TERAKHIR -- dipakai kalau siklus sampling ini
-        # kebetulan belum ada baris baru masuk (sensor kirim terus tiap
-        # beberapa ratus ms, jauh lebih cepat dari siklus baca kita).
+        # LAST valid read cache -- used during this sampling cycle
+        # Coincidentally there haven't been any new lines coming in (the sensor keeps sending every time
+        # several hundred ms, much faster than our read cycle).
         self._last = None
 
     _COMPASS = {
@@ -45,32 +45,32 @@ class WindDirectionSensor:
         3: ("E",  "Timur"),
         4: ("SE", "Tenggara"),
         5: ("S",  "Selatan"),
-        6: ("SW", "Barat Daya"),
+        6: ("SW", "Southwest"),
         7: ("W",  "Barat"),
         8: ("NW", "Barat Laut"),
     }
 
     def _decode(self, code: int):
         abbr, name_id = self._COMPASS.get(code, (None, None))
-        name = f"{name_id} ({abbr})" if abbr else f"Tidak diketahui ({code})"
+        name = f"{name_id} ({abbr})" if abbr else f"Unknown ({code})"
         return abbr, name
 
     def read(self) -> dict:
         """
-        Membaca arah angin terbaru dari UART.
+Read the latest wind direction from UART.
 
-        Jika belum ada data di buffer saat fungsi dipanggil,
-        tunggu sampai WIND_DIR_TIMEOUT untuk mendapatkan minimal
-        satu baris data.
+If there is no data in the buffer when the function is called,
+wait until WIND_DIR_TIMEOUT to get the minimum
+one row of data.
 
-        Cache bacaan valid terakhir tetap digunakan jika pada
-        siklus berikutnya tidak ada data baru.
+The last valid read cache remains in use if on
+the next cycle there is no new data.
         """
         try:
             latest_code = None
 
             # ---------------------------------------------------------
-            # 1. Tunggu data pertama jika buffer masih kosong
+            # 1. Wait for the first data if the buffer is still empty
             # ---------------------------------------------------------
             if self.ser.in_waiting == 0:
                 raw = self.ser.readline().decode(
@@ -85,8 +85,8 @@ class WindDirectionSensor:
                         latest_code = int(angka_str)
 
             # ---------------------------------------------------------
-            # 2. Kuras semua data yang masih tersisa di buffer
-            #    supaya kita mengambil data PALING BARU
+            # 2. Drain all remaining data in the buffer
+            #    so that we take the MOST NEW data
             # ---------------------------------------------------------
             while self.ser.in_waiting > 0:
                 raw = self.ser.readline().decode(
@@ -101,7 +101,7 @@ class WindDirectionSensor:
                         latest_code = int(angka_str)
 
             # ---------------------------------------------------------
-            # 3. Kalau mendapatkan kode valid, update cache
+            # 3. If you get a valid code, update the cache
             # ---------------------------------------------------------
             if latest_code is not None:
                 abbr, name = self._decode(latest_code)
@@ -113,19 +113,19 @@ class WindDirectionSensor:
                 }
 
             # ---------------------------------------------------------
-            # 4. Kalau punya cache, gunakan bacaan terakhir
+            # 4. If you have cache, use the last reading
             # ---------------------------------------------------------
             if self._last is not None:
                 return dict(self._last)
 
             # ---------------------------------------------------------
-            # 5. Benar-benar belum pernah mendapatkan data
+            # 5. Really never get the data
             # ---------------------------------------------------------
             return {
                 "direction_code": None,
                 "direction_abbr": None,
                 "direction_name": None,
-                "error": "belum ada data masuk dari sensor sejak EFWS start",
+                "error": "there has been no incoming data from the sensor since EFWS started",
             }
 
         except Exception as e:
@@ -135,13 +135,13 @@ class WindDirectionSensor:
                 "direction_name": None,
                 "error": str(e),
             }
-# Blok untuk pengetesan langsung (hardware check manual, BUKAN pytest --
-# lihat tests/hardware_checks/ untuk konvensi penamaan check_*.py project ini)
+# Block for direct testing (manual hardware check, NOT pytest --
+# see tests/hardware_checks/ for the naming convention of this check_*.py project)
 if __name__ == "__main__":
 
     sensor = WindDirectionSensor()
     print("=== EFWS Wind Direction Test ===")
-    print("Putar baling-baling sensor... (Ctrl+C untuk berhenti)\n")
+    print("Rotate the sensor propeller... (Ctrl+C to stop)\n")
     try:
         while True:
             data = sensor.read()

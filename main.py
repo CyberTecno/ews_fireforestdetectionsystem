@@ -1,30 +1,30 @@
 """
 Early Fire Warning System (EFWS) - Main Orchestrator
 
-ARSITEKTUR (scheduler per-endpoint, independen -- lihat REVISI di bawah):
-  - Sensor Sampling (SENSOR_READ_INTERVAL_SEC): HANYA baca sensor + evaluasi
-    threshold + sirine lokal. TIDAK PERNAH kirim ke API, TIDAK PERNAH simpan
-    ke SQLite, TIDAK PERNAH ambil GPS. Satu-satunya efeknya ke luar dirinya
-    sendiri: set/clear status Emergency Mode (single source of truth untuk
-    NORMAL vs EMERGENCY) dan simpan snapshot data sensor terbaru.
-  - Location Publisher (thread sendiri, LOCATION_INTERVAL_SEC = 30 menit,
-    SELALU, tidak pernah berubah walau Emergency Mode aktif): ambil GPS
-    (HANYA di sini GPS diambil, tepat sebelum kirim), lalu POST /sensors/location.
-  - Telemetry Publisher (thread sendiri, satu scheduler yang interval-nya
-    ADAPTIF: TELEMETRY_INTERVAL_SEC=30 menit saat NORMAL, beralih ke
-    EMERGENCY_TELEMETRY_INTERVAL_SEC=10 menit selama Emergency Mode aktif).
-    Baru di sinilah data disimpan ke SQLite (sensor_readings) dan
-    dikirim ke POST /sensors/telemetry. Begitu Emergency Mode dimulai,
-    thread ini dibangunkan SEKARANG JUGA (tidak menunggu sisa interval lama).
-  - Heartbeat Publisher (thread sendiri, HEARTBEAT_INTERVAL_SEC = 5 menit,
-    SELALU, tidak bergantung ke Telemetry/Location/Emergency Mode sama
-    sekali): POST /sensors/heartbeat. Endpoint 4 (/sensors/commands/ack)
-    HANYA jalan dari sini, event-driven, kalau response heartbeat bawa
-    'commands' -- di luar jadwal manapun.
-  - Threshold aktif = remote config (dari response Telemetry) di-merge
-    per-field dengan hardcoded lokal (config/threshold_resolver.py).
-  - Retry offline queue (tiap 2 menit) tetap di thread terpisah, independen
-    dari keempat hal di atas.
+ARSITEKTUR (per-endpoint scheduler, independent -- see REVISI below):
+- Sensor Sampling (SENSOR_READ_INTERVAL_SEC): ONLY sensor read + evaluation
+threshold + local siren. NEVER send to API, NEVER save
+to SQLite, NEVER take GPS. Its only effect is outside itself
+itself: set/clear status Emergency Mode (single source of truth for
+NORMAL vs EMERGENCY) and save a snapshot of the latest sensor data.
+- Location Publisher (own thread, LOCATION_INTERVAL_SEC = 30 minutes,
+ALWAYS, never changes even though Emergency Mode is active): take GPS
+(ONLY here GPS taken, just before send), then POST /sensors/location.
+- Telemetry Publisher (own thread, one scheduler with intervals
+ADAPTIVE: TELEMETRY_INTERVAL_SEC=30 minutes when NORMAL, switch to
+EMERGENCY_TELEMETRY_INTERVAL_SEC=10 minutes while Emergency Mode is active).
+This is where the data is saved to SQLite (sensor_readings) and
+sent to POST /sensors/telemetry. Once Emergency Mode starts,
+This thread is awakened RIGHT NOW (not waiting for the rest of the old interval).
+- Heartbeat Publisher (own thread, HEARTBEAT_INTERVAL_SEC = 5 minutes,
+ALWAYS, does not depend on Telemetry/Location/Emergency Same mode
+once): POST /sensors/heartbeat. Endpoint 4 (/sensors/commands/ack)
+ONLY goes from here, event-driven, if the heartbeat response takes it
+'commands' -- outside of any schedule.
+- Active threshold = remote config (from Telemetry response) is merged
+per-field with hardcoded locale (config/threshold_resolver.py).
+- Retry offline queue (every 2 minutes) remains in a separate, independent thread
+of the four things above.
 """
 import json
 import time
@@ -41,7 +41,7 @@ from config.threshold_resolver import resolve_active_thresholds
 from database.db_manager import DBManager
 from communication.api_publisher import APIPublisher
 
-# ─── Buat folder yang dibutuhkan sebelum logger ──────────────────
+# ─── Create the required folders before the logger ──────────────────
 Path(settings.LOG_PATH).parent.mkdir(parents=True, exist_ok=True)
 Path(settings.DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
@@ -79,12 +79,12 @@ def _calc_smoke_level(mq2_ppm, mq135_ppm):
     return round(min(raw,100),2)
 
 
-# ─── GPS cache reader (baca dari file JSON yg ditulis ews_network_setup.sh) ──
+# ─── GPS cache reader (read from file JSON written to ews_network_setup.sh) ──
 def _read_gps_cache() -> "dict | None":
     """
-    Baca file cache GPS yang ditulis oleh ews_network_setup.sh / gps_refresh.sh.
-    Return dict GPS jika fix=true, atau None jika tidak ada / fix=false.
-    main.py tidak pernah membuka serial port AT command secara langsung.
+Read cache file GPS written by ews_network_setup.sh / gps_refresh.sh.
+Return dict GPS if fix=true, or None if none / fix=false.
+main.py never opens the AT command serial port directly.
     """
     cache_path = settings.GPS_CACHE_FILE
     try:
@@ -103,7 +103,7 @@ def _read_gps_cache() -> "dict | None":
 # ─── Sensor + alarm factory ──────────────────────────────────────
 def _load_sensors_and_alarm():
     if settings.RUN_MODE == "mock":
-        logger.info("Mode: MOCK — sensor disimulasi, tidak ada akses GPIO/I2C")
+        logger.info("Mode: MOCK — sensor dissimulated, no access GPIO/I2C")
         from sensors.mock_sensors import (
             MockMQ2, MockMQ135, MockBME280, MockPressureWater,
             MockSoilMoisture, MockAnemometer, MockWindDirection, MockBattery,
@@ -122,7 +122,7 @@ def _load_sensors_and_alarm():
             "rainfall": MockRainfall(),
         }, MockAlarmController()
     else:
-        logger.info("Mode: HARDWARE — mengakses GPIO/SPI/I2C nyata")
+        logger.info("Mode: HARDWARE — access real GPIO/SPI/I2C")
         from sensors.mq2         import MQ2Sensor
         from sensors.mq135       import MQ135Sensor
         from sensors.bme280      import BME280Sensor
@@ -154,8 +154,8 @@ def _load_sensors_and_alarm():
                 sensors[name] = factory()
             except Exception as e:
                 logger.error(
-                    "Sensor '%s' GAGAL diinisialisasi (dianggap TIDAK TERPASANG, "
-                    "nilainya akan 0/null terus di log & payload sampai diperbaiki): %s",
+                    "Sensor '%s' FAILED is initialized (considered NOT INSTALLED,"
+                    "value will be 0/null kept in log & payload until fixed): %s",
                     name, e,
                 )
                 sensors[name] = NullSensor(name, str(e))
@@ -164,8 +164,8 @@ def _load_sensors_and_alarm():
             alarm = AlarmController()
         except Exception as e:
             logger.error(
-                "Alarm controller (relay/sirine) GAGAL diinisialisasi — alarm lokal "
-                "dinonaktifkan (sistem tetap jalan, hanya sirine yang tidak menyala): %s", e,
+                "Alarm controller (relay/siren) FAILED to initialize — local alarm "
+                "disabled (system remains running, only siren is not on): %s", e,
             )
             alarm = NullAlarmController(str(e))
 
@@ -179,7 +179,7 @@ def _load_hardcoded_thresholds() -> dict:
 
 
 def _exceeds(value, danger, lower_is_worse) -> bool:
-    """True kalau value melewati danger threshold. None value -> selalu False (unknown, bukan alarm)."""
+    """True if the value passes the danger threshold. None value -> always False (unknown, not an alarm)."""
     if value is None or danger is None:
         return False
     return (value <= danger) if lower_is_worse else (value >= danger)
@@ -196,32 +196,32 @@ class EFWS:
         self._critical_streak = 0
         self._stop_flag = threading.Event()
 
-        # ─── State bersama antar-thread untuk 3 scheduler independen ──
-        # Emergency Mode: SATU sumber kebenaran (di-set/clear HANYA oleh
-        # sampling loop). Location & Heartbeat TIDAK PERNAH membaca ini --
-        # cuma Telemetry Publisher yang membaca untuk memilih interval.
+        # ─── Inter-thread shared state for 3 independent schedulers ──
+        # Emergency Mode: ONE source of truth (set/clear ONLY by
+        # sampling loop). Location & Heartbeat NEVER read this --
+        # only Telemetry Publisher reads to select the interval.
         self._emergency = threading.Event()
 
-        # Menandakan bahwa Telemetry Publisher harus melakukan
-        # Immediate Emergency Send (sekali saja saat transisi
+        # Indicates that Telemetry Publisher should perform
+        # Immediate Emergency Send (only once during transition
         # NORMAL -> EMERGENCY).
         self._emergency_immediate_send = threading.Event()
 
-        # Dipakai sampling loop untuk membangunkan Telemetry Publisher
-        # SEKETIKA saat baru masuk Emergency Mode, tanpa menunggu sisa
-        # waktu tunggu interval normal (30 menit) habis dulu.
+        # A sampling loop is used to wake up the Telemetry Publisher
+        # IMMEDIATELY when just entering Emergency Mode, without waiting for the rest
+        # the normal interval waiting time (30 minutes) runs out first.
         self._telemetry_wake = threading.Event()
-        # Snapshot data sensor + smoke_pct TERBARU dari sampling loop --
-        # dibaca oleh Telemetry Publisher tiap kali dia mau kirim (bukan
-        # baca sensor sendiri, supaya "sensor sampling" tetap satu-satunya
-        # yang menyentuh hardware sensor).
+        # LATEST sensor data + smoke_pct snapshot from the sampling loop --
+        # read by Telemetry Publisher every time he wants to send (not
+        # read the sensor yourself, so that the "sampling sensor" remains the only one
+        # that touches the sensor hardware).
         self._startup_telemetry_sent = False
         self._data_lock = threading.Lock()
         self._latest_data = None
         self._latest_smoke = None
-        # Baseline utk hitung "rainfall sejak pengiriman telemetry SEBELUMNYA"
-        # (delta dari counter kumulatif sensor) -- HANYA di-update tiap kali
-        # Telemetry Publisher benar-benar kirim, bukan tiap siklus sampling.
+        # Baseline to calculate "rainfall since PREVIOUS telemetry sending"
+        # (delta of sensor cumulative counter) -- ONLY is updated each time
+        # Telemetry Publisher actually sends, not every sampling cycle.
         self._last_rainfall_total_mm = None
 
         self._location = {
@@ -230,35 +230,35 @@ class EFWS:
             "source": "config",
             "fix":    False,
         }
-        # Kapan GPS TERAKHIR KALI benar-benar dapat fix (epoch seconds).
-        # None = belum pernah sama sekali sejak EFWS ini start. Device ini
-        # terpasang PERMANEN di satu titik -- jadi kalau GPS gagal fix di
-        # suatu siklus, jauh lebih masuk akal pakai posisi fix TERAKHIR yang
-        # diketahui daripada langsung jatuh ke koordinat statis di config.
+        # When can GPS LAST TIME actually be fixed (epoch seconds).
+        # None = never at all since EFWS started. this device
+        # installed PERMANENTLY at one point -- so if GPS fails to obtain a fix during a
+        # cycle, it makes much more sense to use the LAST fixed position
+        # known rather than directly dropping to static coordinates in config.
         self._last_gps_fix_at = None
 
         logger.info("EFWS initialised. Device: %s | Mode: %s | GPS cache: %s",
                     settings.DEVICE_ID, settings.RUN_MODE,
                     settings.GPS_CACHE_FILE)
 
-        # Thread terpisah khusus retry offline queue tiap
-        # EFWS_CONNECTIVITY_CHECK_SEC (2 menit) -- SENGAJA independen dari
-        # siklus baca sensor (3 menit), supaya requirement "retry every
-        # 2 minutes" tetap terpenuhi persis walau siklus baca lebih lambat.
+        # Separate thread specifically for each offline queue retry
+        # EFWS_CONNECTIVITY_CHECK_SEC (2 minutes) -- INTENTIONAL is independent of
+        # sensor read cycle (3 minutes), so that the requirement "retry every
+        # 2 minutes" is still fulfilled exactly even though the reading cycle is slower.
         self._flush_thread = threading.Thread(target=self._flush_queue_loop, daemon=True)
         self._flush_thread.start()
 
-        # Thread terpisah: auto-purge data lokal (SQLite) yang lebih tua
-        # dari EFWS_DB_RETENTION_DAYS (default 3 hari), dicek tiap
-        # EFWS_DB_RETENTION_CHECK_SEC (default 6 jam) -- independen dari
-        # siklus baca sensor maupun retry offline queue.
+        # Separate thread: older auto-purge local data (SQLite).
+        # from EFWS_DB_RETENTION_DAYS (default 3 days), checked every
+        # EFWS_DB_RETENTION_CHECK_SEC (default 6 hours) -- independent of
+        # sensor read cycle and offline queue retry.
         self._retention_thread = threading.Thread(target=self._retention_loop, daemon=True)
         self._retention_thread.start()
 
-        # ─── 3 scheduler endpoint, masing-masing thread sendiri ───────
-        # Tidak ada scheduler yang memanggil scheduler lain. Kegagalan di
-        # satu publisher tidak pernah menghentikan publisher lainnya
-        # (masing-masing punya try/except sendiri di loop-nya).
+        # ─── 3 endpoint schedulers, each own thread ───────
+        # No scheduler calls another scheduler. Failure in
+        # one publisher never stops another publisher
+        # (each has its own try/except in its loop).
         self._location_thread = threading.Thread(target=self._location_loop, daemon=True)
         self._location_thread.start()
 
@@ -268,7 +268,7 @@ class EFWS:
         self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
         self._heartbeat_thread.start()
 
-    # ─── Background: retry offline queue, independen dari siklus baca ──
+    # ─── Background: retry offline queue, independent of read cycle ──
     def _flush_queue_loop(self):
         interval = settings.EFWS_CONNECTIVITY_CHECK_SEC
         while not self._stop_flag.is_set():
@@ -278,7 +278,7 @@ class EFWS:
                 logger.error("Flush queue thread error:\n%s", traceback.format_exc())
             self._stop_flag.wait(interval)
 
-    # ─── Background: auto-hapus data lokal lebih dari N hari (default 3) ──
+    # ─── Background: auto-delete local data older than N days (default 3) ──
     def _retention_loop(self):
         days = settings.DB_RETENTION_DAYS
         interval = settings.DB_RETENTION_CHECK_SEC
@@ -287,8 +287,8 @@ class EFWS:
                 result = self.db.purge_old_data(days=days)
                 if result["sensor_readings_deleted"] or result["api_queue_deleted"] or result["location_log_deleted"]:
                     logger.info(
-                        "🧹 Retention: hapus %d baris sensor_readings, %d baris api_queue, "
-                        "%d baris location_log (lebih tua dari %d hari).",
+                        "🧹 Retention: remove %d sensor_readings row, %d api_queue row,"
+                        "%d location_log row (older than %d by days).",
                         result["sensor_readings_deleted"],
                         result["api_queue_deleted"],
                         result["location_log_deleted"],
@@ -298,9 +298,9 @@ class EFWS:
                 logger.error("Retention thread error:\n%s", traceback.format_exc())
             self._stop_flag.wait(interval)
 
-    # ─── Publisher 1/3: Location -- SELALU tiap 30 menit, tidak pernah
-    # terpengaruh Emergency Mode. GPS HANYA diambil di sini, tepat sebelum
-    # kirim (bukan di sampling loop) -- sesuai spec. ──────────────────
+    # ─── Publisher 1/3: Location -- ALWAYS every 30 minutes, never
+    # affected by Emergency Mode. GPS JUST taken here, right before
+    # send (not in sampling loop) -- according to spec. ──────────────────
     def _location_loop(self):
         interval = settings.LOCATION_INTERVAL_SEC
         while not self._stop_flag.is_set():
@@ -312,25 +312,25 @@ class EFWS:
                     self._location.get("lat"), self._location.get("lon"),
                     self._location.get("source"),
                     {
-                        "gps":        "GPS asli, fix BARU siklus ini",
-                        "gps_cached": "GPS asli, TAPI posisi LAMA (fix terakhir yang diketahui, dikirim ulang)",
-                        "config":     "fallback statis dari config, BELUM PERNAH dapat GPS fix",
+                        "gps":        "Original GPS, NEW fix this cycle",
+                        "gps_cached": "Original GPS, BUT position OLD (last known fix, resubmitted)",
+                        "config":     "static fallback from config, NEVER can GPS fix",
                     }.get(self._location.get("source"), self._location.get("source")),
                 )
-                # Dicatat SEBELUM kirim (sama seperti pola Telemetry) -- supaya
-                # riwayat "device pernah lapor posisi ini pada waktu ini" tetap
-                # ada di lokal walau pengiriman ke API gagal & masuk offline queue.
+                # Note BEFORE sending (same as Telemetry pattern) -- so
+                # fixed "device once reported this position at this time" history
+                # available locally even though delivery to API failed & entered the offline queue.
                 self.db.log_location(self._location, payload)
                 self.api.send_location(payload, db=self.db)
             except Exception:
-                logger.error("Location Publisher error (tidak mempengaruhi Telemetry/Heartbeat):\n%s",
+                logger.error("Location Publisher error (does not affect Telemetry/Heartbeat):\n%s",
                              traceback.format_exc())
             self._stop_flag.wait(interval)
 
     # ─── Publisher 2/3: Telemetry -- SATU scheduler, interval ADAPTIF:
-    # 30 menit saat NORMAL, 10 menit selama Emergency Mode aktif. Inilah
-    # satu-satunya tempat data disimpan ke SQLite. Dibangunkan seketika
-    # (lewat _telemetry_wake) saat Emergency Mode baru dimulai. ────────
+    # 30 minutes when NORMAL, 10 minutes while Emergency Mode is active. This is it
+    # the only place data is saved to SQLite. Wake up instantly
+    # (via _telemetry_wake) when Emergency Mode is just started. ────────
     def _telemetry_loop(self):
         while not self._stop_flag.is_set():
             interval = (
@@ -346,8 +346,8 @@ class EFWS:
             with self._data_lock:
                 data, smoke_pct = self._latest_data, self._latest_smoke
             if data is None:
-                # Belum ada satu pun siklus sampling yang selesai -- tunggu
-                # sebentar lagi daripada kirim payload kosong.
+                # Not a single sampling cycle has been completed yet -- wait
+                # sooner than sending an empty payload.
                 continue
 
             immediate_send = self._emergency_immediate_send.is_set()
@@ -356,9 +356,9 @@ class EFWS:
 
             try:
                 payload = self._build_telemetry_payload(data, smoke_pct)
-                # Simpan ke DB lokal SEBELUM dikirim (sumber kebenaran lokal,
-                # dan untuk audit -- full_payload berisi PERSIS body yang
-                # dikirim ke API). Dibersihkan otomatis oleh _retention_loop.
+                # Save to local DB BEFORE sending (local source of truth,
+                # and for auditing -- full_payload contains the body EXACTLY
+                # sent to API). Auto-cleaned by _retention_loop.
                 self.db.log_reading(data, payload)
 
                 if immediate_send:
@@ -375,7 +375,7 @@ class EFWS:
 
                 else:
                     logger.info(
-                        "[Telemetry Publisher] Normal Scheduled Send "
+                        "[Telemetry Publisher] Normal Scheduled Send"
                         "(interval=%ds)",
                         settings.TELEMETRY_INTERVAL_SEC,
                     )
@@ -384,14 +384,14 @@ class EFWS:
 
                 pending = self.db.count_pending_queue()
                 if pending:
-                    logger.info("📦 %d item masih di offline queue (di-retry thread terpisah).", pending)
+                    logger.info("📦 %d item is still in the offline queue (retryed in a separate thread).", pending)
             except Exception:
-                logger.error("Telemetry Publisher error (tidak mempengaruhi Location/Heartbeat):\n%s",
+                logger.error("Telemetry Publisher error (does not affect Location/Heartbeat):\n%s",
                              traceback.format_exc())
 
-    # ─── Publisher 3/3: Heartbeat -- SELALU tiap 5 menit, tidak pernah
-    # bergantung ke Telemetry/Location/Emergency Mode. Endpoint 4 (command
-    # ACK) HANYA jalan dari sini, event-driven, kalau ada 'commands'. ──
+    # ─── Publisher 3/3: Heartbeat -- ALWAYS every 5 minutes, never
+    # depends on Telemetry/Location/Emergency Mode. Endpoint 4 (command
+    # ACK) ONLY goes from here, event-driven, if there are 'commands'. ──
     def _heartbeat_loop(self):
         interval = settings.HEARTBEAT_INTERVAL_SEC
         while not self._stop_flag.is_set():
@@ -403,24 +403,24 @@ class EFWS:
                 if delivered and commands:
                     self._process_commands(commands)
             except Exception:
-                logger.error("Heartbeat Publisher error (tidak mempengaruhi Location/Telemetry):\n%s",
+                logger.error("Heartbeat Publisher error (does not affect Location/Telemetry):\n%s",
                              traceback.format_exc())
             self._stop_flag.wait(interval)
 
-    # ─── GPS refresh (baca cache dari ews_network_setup/gps_refresh.sh) ────
+    # ─── GPS refresh (read cache from ews_network_setup/gps_refresh.sh) ────
     def _update_gps(self):
         """
-        Baca posisi GPS dari cache file yang ditulis oleh:
-          - ews_network_setup.sh (saat boot)
-          - gps_refresh.sh (setiap 30 menit via systemd timer)
+Read position GPS from file cache written by:
+- ews_network_setup.sh (on boot)
+- gps_refresh.sh (every 30 minutes via systemd timer)
 
-        main.py TIDAK membuka serial port AT command secara langsung.
-        GPS fetch adalah tanggung jawab script bash, bukan Python.
+main.py DOES NOT open serial port AT command directly.
+GPS fetch is the responsibility of the bash script, not Python.
 
         Fallback chain:
-          1) Cache file ada + fix=true  → pakai koordinat dari cache
-          2) Cache file ada + fix=false  → pakai posisi lama (gps_cached)
-          3) Tidak ada cache sama sekali  → pakai .env (config)
+1) Cache file exists + fix=true → use coordinates from cache
+2) Cache file exists + fix=false → use old position (gps_cached)
+3) No cache at all → use .env (config)
         """
         if settings.RUN_MODE == "mock":
             # Mode mock: generate posisi simulasi
@@ -439,7 +439,7 @@ class EFWS:
         result = _read_gps_cache()
 
         if result is not None:
-            # Ada fix dari cache
+            # There is a fix for the cache
             cache_age_min = (time.time() - result.get("timestamp", 0)) / 60
             self._location = {
                 "lat":        result["lat"],
@@ -450,32 +450,32 @@ class EFWS:
             }
             self._last_gps_fix_at = result.get("timestamp") or time.time()
             logger.info(
-                "📍 [GPS] Cache valid — lat=%.6f, lon=%.6f | usia cache: %.1f menit",
+                "📍 [GPS] Valid cache — lat=%.6f, lon=%.6f | cache age: %.1f minutes",
                 result["lat"], result["lon"], cache_age_min,
             )
         else:
-            self._gps_fallback(reason="Cache GPS tidak ada atau fix=false")
+            self._gps_fallback(reason="Cache GPS is missing or fix=false")
 
 
     def _gps_fallback(self, reason: str):
         """
-        Dipanggil kalau GPS gagal fix (semua percobaan habis) ATAU modem
-        tidak tersedia sama sekali. Prioritas:
-          1) Kalau PERNAH dapat fix sebelumnya -- device ini terpasang
-             PERMANEN di satu titik, jadi posisi lama kemungkinan besar
-             MASIH akurat. Pakai itu (source="gps_cached"), JANGAN diam-diam
-             ganti ke koordinat statis config.
-          2) Kalau BELUM PERNAH dapat fix sama sekali sejak start -- baru
-             jatuh ke koordinat statis DEVICE_LOCATION dari config.
+Called if GPS fails to fix (all attempts expired) OR modem
+not available at all. Priority:
+1) If NEVER can be fixed before -- this device is installed
+PERMANENTLY at one point, so the old position is likely
+STILL is accurate. Use it (source="gps_cached"), DO NOT silently
+change to static coordinates config.
+2) If NEVER can be fixed completely from start up -- then
+falls to static coordinates DEVICE_LOCATION from config.
         """
         if self._last_gps_fix_at is not None:
             age_min = (time.time() - self._last_gps_fix_at) / 60
             self._location["source"] = "gps_cached"
-            self._location["fix"] = False  # bukan fix BARU siklus ini, tapi posisi lama yang diketahui
+            self._location["fix"] = False  # not this cycle's NEW fix, but the known old position
             logger.warning(
-                "📍 %s -- kirim ULANG posisi GPS TERAKHIR yang diketahui "
-                "(usia %.1f menit): lat=%s, lon=%s. (Device diasumsikan diam "
-                "di satu titik, jadi posisi lama ini kemungkinan besar masih benar.)",
+                "📍 %s -- send BELA known position GPS LAST"
+                "(age %.1f minutes): lat=%s, lon=%s. (The device is assumed to be stationary"
+                "at one point, so this old position is likely still correct.)",
                 reason, age_min, self._location.get("lat"), self._location.get("lon"),
             )
         else:
@@ -486,8 +486,8 @@ class EFWS:
                 "fix":    False,
             }
             logger.warning(
-                "📍 %s -- BELUM PERNAH dapat GPS fix sejak start, pakai "
-                "koordinat statis dari config: lat=%s, lon=%s.",
+                "📍 %s -- NEVER got GPS fixed from start, use it"
+                "static coordinates from config: lat=%s, lon=%s.",
                 reason, self._location["lat"], self._location["lon"],
             )
 
@@ -506,22 +506,22 @@ class EFWS:
             if isinstance(data[key], dict) and data[key].get("error"):
                 failed.append(key)
 
-        # Ringkasan per-siklus: sensor mana saja yang tidak terbaca/kosong
-        # siklus ini -> field-nya otomatis jadi 0/null di evaluasi & payload
+        # Per-cycle summary: any sensors that are unread/empty
+        # this cycle -> the field automatically becomes 0/null in evaluation & payload
         # (lihat _exceeds, _calc_smoke_level, _build_telemetry_payload).
         if failed:
             logger.warning(
-                "⚠️ Sensor TIDAK TERBACA/KOSONG siklus ini (nilai=0/null): %s",
+                "⚠️ Sensor UNREAD/EMPTY this cycle (value=0/null): %s",
                 ", ".join(failed),
             )
 
         return data
 
-    # ─── Evaluate (single-tier: exceeded / not, sesuai kontrak API) ──
+    # ─── Evaluate (single-tier: exceeded / not, according to contract API) ──
     def _evaluate(self, data: dict):
         """
-        Threshold aktif = merge remote config (dari response telemetry
-        terakhir) dengan hardcoded lokal, per-field (lihat threshold_resolver).
+Active threshold = merge remote config (from response telemetry
+last) with locally hardcoded, per-field (see threshold_resolver).
         Return: (any_triggered: bool, triggered: list[str], smoke_pct: float)
         """
         t = resolve_active_thresholds(self.hardcoded_thresholds, self.api.remote_config)
@@ -543,9 +543,9 @@ class EFWS:
             "soil_surface": _exceeds(surface, t["soilMoistureDangerThreshold"]["surface"], lower_is_worse=True),
             "soil_deep":    _exceeds(deep,    t["soilMoistureDangerThreshold"]["deep"],    lower_is_worse=True),
             "wind":        _exceeds(data["wind"].get("speed_ms"), t["windDangerThreshold"], lower_is_worse=False),
-            # rainfall_last_hour_mm (BUKAN delta-sejak-telemetry) -- lihat
-            # _rainfallDangerThreshold_note di thresholds.json kenapa beda
-            # dari nilai "rainfall" yang dikirim di payload API.
+            # rainfall_last_hour_mm (NOT delta-since-telemetry) -- see
+            # _rainfallDangerThreshold_note in thresholds.json why is it different
+            # from the "rainfall" value sent in payload API.
             "rainfall":    _exceeds(data["rainfall"].get("rainfall_last_hour_mm"), t["rainfallDangerThreshold"], lower_is_worse=False),
         }
 
@@ -561,15 +561,14 @@ class EFWS:
             "longitude":   self._location["lon"],
         }
 
-    # ─── Hitung rainfall delta sejak pengiriman telemetry SEBELUMNYA ──
+    # ─── Calculate rainfall delta since PREVIOUS telemetry sending ──
     def _rainfall_delta(self, total_mm):
         """
-        total_mm: rainfall_total_mm SAAT INI (counter kumulatif dari sensor,
-        selalu naik/tidak pernah reset sendiri kecuali di-set manual).
-        Return: mm yang turun sejak panggilan TERAKHIR method ini (yaitu
-        sejak telemetry SEBELUMNYA benar-benar dikirim) -- None kalau
-        sensor tidak tersedia (NullSensor), 0.0 di pengiriman PERTAMA
-        (belum ada baseline pembanding).
+        total_mm: CURRENT rainfall_total_mm (the sensor's cumulative counter,
+        which always increases and never resets unless reset manually).
+        Returns the rainfall in mm since this method's PREVIOUS call (that is,
+        since telemetry was last sent) -- None if the sensor is unavailable
+        (NullSensor), or 0.0 on the FIRST transmission (no comparison baseline yet).
         """
         if total_mm is None:
             return None
@@ -613,11 +612,11 @@ class EFWS:
                     "batteryLevel": battery.get("percent"),
                     "waterLevel": pressure.get("depth_m"),
                     "pressure": pressure.get("pressure_bar"),
-                    # "rainfall" = mm hujan SEJAK pengiriman telemetry SEBELUMNYA
-                    # (delta dari counter kumulatif rainfall_total_mm), BUKAN
-                    # window 1-jam bawaan sensor -- supaya angkanya selalu pas
-                    # dengan periode kirim yang sebenarnya (30 menit normal /
-                    # 10 menit darurat), bukan window tetap yang tidak sinkron.
+                    # "rainfall" = mm rain SINCE PREVIOUS telemetry sending
+                    # (delta of cumulative counter rainfall_total_mm), NOT
+                    # Sensor built-in 1-hour window -- so the numbers always match
+                    # with the actual sending period (30 minutes normal /
+                    # 10 minutes emergency), not a fixed window that is not synchronized.
                     "rainfall": self._rainfall_delta(rainfall.get("rainfall_total_mm")),
                 }
             ],
@@ -639,8 +638,8 @@ class EFWS:
             "error":       error,
         }
 
-    # ─── Alarm handler LOKAL (sirine real-time) + single source of truth
-    # untuk status Emergency Mode yang dipakai Telemetry Publisher ─────
+    # ─── LOCAL alarm handler (real-time siren) + single source of truth
+    # for Emergency Mode status used by Telemetry Publisher ─────
     def _handle_alarm(self, any_triggered: bool, triggered: list):
         cfg      = self.hardcoded_thresholds.get("alarm", {})
         required = cfg.get("consecutive_readings_required", 3)
@@ -652,28 +651,28 @@ class EFWS:
         now_emergency = any_triggered and self._critical_streak >= required
 
         if now_emergency and not was_emergency:
-            logger.warning("🔴 ALARM (lokal, sirine menyala) — %d bacaan berturut: %s -- "
-                           "MASUK EMERGENCY MODE, Telemetry Publisher dibangunkan sekarang.",
+            logger.warning("🔴 ALARM (local, siren on) — %d sequential reading: %s --"
+                           "ENTER EMERGENCY MODE, Telemetry Publisher is developed now.",
                            self._critical_streak, triggered)
             self._emergency.set()
-            # Immediate telemetry hanya SATU KALI
+            # Immediate telemetry only SATU KALI
             self._emergency_immediate_send.set()
-            self._telemetry_wake.set()  # bangunkan Telemetry Publisher SEKARANG, jangan tunggu interval lama habis
+            self._telemetry_wake.set()  # wake the Telemetry Publisher NOW; do not wait for the old interval to expire
         elif not now_emergency and was_emergency:
-            logger.warning("🟢 Semua nilai kembali NORMAL -- KELUAR EMERGENCY MODE, "
-                           "Telemetry Publisher kembali ke jadwal 30 menit.")
+            logger.warning("🟢 All return values ​​NORMAL -- EXIT EMERGENCY MODE,"
+                           "Telemetry Publisher returns to a 30 minute schedule.")
             self._emergency.clear()
 
-    # ─── Endpoint 4: eksekusi command dari heartbeat, lalu ACK ───
+    # ─── Endpoint 4: execute command from heartbeat, then ACK ───
     def _process_commands(self, commands: list):
         for cmd in commands:
             command_id = cmd.get("id", "")
             command_name = cmd.get("command", "")
-            logger.warning("📥 Command diterima dari backend: id=%s command=%s", command_id, command_name)
+            logger.warning("📥 Command received from backend: id=%s command=%s", command_id, command_name)
 
             handler = self._COMMAND_HANDLERS.get(command_name)
             if handler is None:
-                logger.error("Command '%s' tidak dikenal.", command_name)
+                logger.error("Command '%s' is unknown.", command_name)
                 ack = self._build_ack_payload(command_id, "FAILED", f"Unknown command: {command_name}")
                 self.api.send_command_ack(ack, db=self.db)
                 continue
@@ -682,29 +681,29 @@ class EFWS:
                 handler(self)
                 ack = self._build_ack_payload(command_id, "SUCCESS")
             except Exception as e:
-                logger.error("Command '%s' gagal: %s", command_name, e)
+                logger.error("Command '%s' failed: %s", command_name, e)
                 ack = self._build_ack_payload(command_id, "FAILED", str(e))
 
             self.api.send_command_ack(ack, db=self.db)
 
     def _cmd_reboot(self):
         """
-        CATATAN ARSITEKTUR PENTING:
-        Spec minta "execute -> wait until complete -> baru kirim ACK". Untuk
-        command Reboot ini SECARA TEKNIS TIDAK MUNGKIN dipenuhi literal:
-        begitu `systemctl restart efws.service` dieksekusi, proses Python
-        yang sedang jalan (proses ini sendiri) akan dibunuh SEBELUM sempat
-        mengirim ACK "setelah selesai".
+IMPORTANT ARCHITECTURAL NOTE:
+The spec asks for "execute -> wait until complete -> then send ACK". For
+This Reboot command is TECHNICALLY IMPOSSIBLE is filled with literals:
+once `systemctl restart efws.service` is executed, the Python process
+which is running (this process itself) will be killed by BEFORE
+sends ACK "once completed".
 
-        Solusi yang dipakai: dispatch restart lewat proses child yang
-        DETACHED dengan delay singkat (EFWS_REBOOT_DELAY_SEC, default 5s),
-        lalu anggap "berhasil" begitu restart itu terjadwal (bukan setelah
-        restart benar-benar selesai) -- ACK SUCCESS dikirim oleh caller
-        (_process_commands) SEGERA setelah fungsi ini return, memberi waktu
-        ACK terkirim ke backend sebelum proses ini benar-benar mati.
+The solution used: dispatch restart via the child process
+DETACHED with short delay (EFWS_REBOOT_DELAY_SEC, default 5s),
+then consider it "successful" once that restart is scheduled (not after
+restart completely completed) -- ACK SUCCESS sent by caller
+(_process_commands) IMMEDIATELY after this function returns, gives the time
+ACK is sent to the backend before the process actually dies.
         """
         delay = settings.COMMAND_REBOOT_DELAY_SEC
-        logger.warning("🔄 Reboot dijadwalkan %ds lagi (setelah ACK dikirim)...", delay)
+        logger.warning("🔄 Reboot scheduled %ds again (after ACK is sent)...", delay)
         subprocess.Popen(
             ["setsid", "bash", "-c", f"sleep {delay} && sudo -n systemctl restart efws.service"],
             stdout=subprocess.DEVNULL,
@@ -717,15 +716,15 @@ class EFWS:
         "Reboot": _cmd_reboot,
     }
 
-    # ─── Main loop -- SENSOR SAMPLING SAJA (baca + evaluasi threshold).
-    # Tidak kirim ke API, tidak simpan ke SQLite, tidak ambil GPS di sini --
-    # itu semua tugas Location/Telemetry/Heartbeat Publisher masing-masing
-    # di thread sendiri (lihat _location_loop/_telemetry_loop/_heartbeat_loop). ──
+    # ─── Main loop -- SENSOR SAMPLING ONLY (read + threshold evaluation).
+    # Doesn't send to API, doesn't save to SQLite, doesn't grab GPS here --
+    # that's all the tasks of each Location/Telemetry/Heartbeat Publisher
+    # in its own thread (see _location_loop/_telemetry_loop/_heartbeat_loop). ──
     def run(self):
         logger.info(
             "EFWS loop started. Sensor sampling tiap: %ds | "
-            "Location: %ds (selalu) | Telemetry: %ds normal / %ds emergency | "
-            "Heartbeat: %ds (selalu) | Retry queue: %ds (thread terpisah)",
+            "Location: %ds (always) | Telemetry: %ds normal / %ds emergency |"
+            "Heartbeat: %ds (always) | Retry queue: %ds (separate thread)",
             settings.SENSOR_READ_INTERVAL_SEC,
             settings.LOCATION_INTERVAL_SEC,
             settings.TELEMETRY_INTERVAL_SEC,
@@ -735,15 +734,15 @@ class EFWS:
         )
         try:
             while True:
-                # 1) Baca semua sensor tiap siklus (GPS TIDAK di sini).
+                # 1) Read all sensors each cycle (GPS NOT here).
                 data = self._read_all()
 
-                # 2) Evaluasi threshold aktif (remote-first, fallback lokal per-field).
+                # 2) Active threshold evaluation (remote-first, per-field local fallback).
                 any_triggered, triggered, smoke_pct = self._evaluate(data)
 
-                # 3) Simpan snapshot terbaru supaya Telemetry & Heartbeat
-                #    Publisher (thread lain) selalu punya data segar tanpa
-                #    perlu baca sensor sendiri-sendiri.
+                # 3) Save the latest snapshot for Telemetry & Heartbeat
+                #    Publisher (another thread) always has fresh data without
+                #    need to read the sensors individually.
                 with self._data_lock:
                     self._latest_data = data
                     self._latest_smoke = smoke_pct
@@ -751,14 +750,14 @@ class EFWS:
                         self._startup_telemetry_sent = True
                         self._telemetry_wake.set()
 
-                # 4) Sirine lokal + status Emergency Mode (single source of
-                #    truth untuk Telemetry Publisher) -- selalu dievaluasi
-                #    real-time, independen dari publisher mana pun.
+                # 4) Local siren + Emergency Mode status (single source of
+                #    truth for Telemetry Publisher) -- always evaluated
+                #    real-time, independent of any publisher.
                 self._handle_alarm(any_triggered, triggered)
 
                 if not any_triggered:
                     logger.info(
-                        "READ | semua nilai NORMAL. smoke=%.1f%% temp=%.1f°C hum=%.1f%%",
+                        "READ | all values ​​NORMAL. smoke=%.1f%% temp=%.1f°C hum=%.1f%%",
                         smoke_pct or 0,
                         data["bme280"].get("temperature_c", 0) or 0,
                         data["bme280"].get("humidity_percent", 0) or 0,
@@ -767,16 +766,16 @@ class EFWS:
                 time.sleep(settings.SENSOR_READ_INTERVAL_SEC)
 
         except KeyboardInterrupt:
-            logger.info("EFWS dihentikan oleh user (Ctrl+C).")
+            logger.info("EFWS was stopped by user (Ctrl+C).")
         except Exception:
             logger.critical("EFWS crash!\n%s", traceback.format_exc())
         finally:
             self._stop_flag.set()
-            self._telemetry_wake.set()  # bangunkan Telemetry Publisher supaya langsung keluar
+            self._telemetry_wake.set()  # wake Telemetry Publisher so that it exits immediately
             self.alarm.silence()
             self.api.close()
             self.db.close()
-            logger.info("EFWS shutdown selesai.")
+            logger.info("EFWS shutdown completed.")
 
 
 if __name__ == "__main__":

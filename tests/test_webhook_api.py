@@ -1,10 +1,10 @@
 """
-TEST — Konektivitas API ke webhook.site (atau backend production).
+TEST — API connectivity to webhook.site (or production backend).
 
-Kirim satu contoh payload telemetry untuk verifikasi:
-  - Pi bisa reach API endpoint
-  - Format JSON diterima dengan benar
-  - Header Authorization benar (jika EFWS_API_KEY diisi)
+Send one example telemetry payload for verification:
+- Pi can reach API endpoint
+- Format JSON is received correctly
+- Authorization header is correct (if EFWS_API_KEY is filled in)
 
 Usage: python3 tests/test_webhook_api.py
 """
@@ -16,15 +16,15 @@ from config import settings
 from communication.api_publisher import APIPublisher
 
 print("=" * 60)
-print("  TEST Konektivitas API")
+print("API Connectivity TEST")
 print("=" * 60)
 print(f"deviceId    : {settings.DEVICE_ID}")
 print(f"deviceToken : {settings.DEVICE_TOKEN}")
 print(f"endpoint    : {settings.telemetry_endpoint()}\n")
 
 if "webhook.site/xxxxxxxx" in settings.API_BASE_URL:
-    print("[FAIL] EFWS_API_URL masih placeholder di .env")
-    print("Buka https://webhook.site, copy 'Your unique URL', isi ke .env")
+    print("[FAIL] EFWS_API_URL is still a placeholder in .env")
+    print("Open https://webhook.site, copy 'Your unique URL', fill it into .env")
     sys.exit(1)
 
 sample = {
@@ -49,6 +49,6 @@ ok = api.send_telemetry(sample)
 api.close()
 
 if ok:
-    print("✅ Berhasil! Cek halaman webhook.site — payload harus muncul di sana.")
+    print("✅ Success! Check the webhook.site page — the payload should appear there.")
 else:
-    print("❌ Gagal. Cek koneksi internet Pi dan EFWS_API_URL di .env")
+    print("❌ Failed. Check the Pi and EFWS_API_URL's internet connection in .env")

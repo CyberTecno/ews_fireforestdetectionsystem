@@ -1,9 +1,9 @@
 """
-Mock API server lokal (stdlib saja, tanpa Flask) - simulasi webhook.site
-untuk testing tanpa internet/koneksi 4G dulu.
+Local mock API server (standard library only, no Flask) that simulates webhook.site
+for testing before an internet/4G connection is available.
 
 Usage: python3 tools/mock_api_server.py
-Lalu set EFWS_API_URL=http://<ip-komputer-ini>:5000/api/v1/efws di .env
+Then set EFWS_API_URL=http://<this-computer-ip>:5000/api/v1/efws in .env
 """
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -43,8 +43,8 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     server = HTTPServer((HOST, PORT), Handler)
-    print(f"Mock API server jalan di http://{HOST}:{PORT}")
-    print("Tekan Ctrl+C untuk stop. Menunggu request...\n")
+    print(f"Mock API server running at http://{HOST}:{PORT}")
+    print("Press Ctrl+C to stop. Waiting for request...\n")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

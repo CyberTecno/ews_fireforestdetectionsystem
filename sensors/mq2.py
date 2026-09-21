@@ -1,12 +1,12 @@
 """
 MQ-2 Gas/Smoke Sensor driver.
-MQ-2 analog-only -> dibaca lewat MCP3008 (SPI ADC), channel default CH0.
-Sinyal AOUT MQ-2 (0-5V) WAJIB lewat logic level converter sebelum masuk
-ke MCP3008 (lihat docs/Pinout.md).
+MQ-2 analog-only -> read via MCP3008 (SPI ADC), default channel CH0.
+The signal AOUT MQ-2 (0-5V) MUST passes through the logic level converter before entering
+to MCP3008 (see docs/Pinout.md).
 
-NOTE: formula voltase->ppm di bawah adalah pendekatan linear sederhana.
-Untuk ppm akurat, kalibrasi R0 di udara bersih sesuai kurva Rs/R0 datasheet
-MQ-2 (log-log). Anggap "ppm" sebagai indikator relatif sebelum dikalibrasi.
+NOTE: The voltage->ppm formula below is a simple linear approximation.
+For accurate ppm, calibrate R0 in clean air according to the datasheet Rs/R0 curve
+MQ-2 (log-log). Consider "ppm" as a relative indicator before calibrating.
 """
 import time
 from config import settings
@@ -25,7 +25,7 @@ class MQ2Sensor:
         voltage = self.read_voltage()
         if voltage <= 0:
             return 0.0
-        # CALIBRATE: ganti dengan kurva Rs/R0 sensor Anda untuk akurasi nyata
+        # CALIBRATE: replace with your sensor's Rs/R0 curve for real accuracy
         ppm = max(0.0, (voltage - 0.4) * 1000)
         return round(ppm, 2)
 

@@ -9,10 +9,10 @@ PORTS = [
 
 BAUDRATE = 115200
 
-# Ganti dengan nomor tujuan
+# Replace with destination number
 PHONE_NUMBER = "+6283849571919"
 
-MESSAGE = "Test SMS dari perangkat EFWS SIM7600E-H."
+MESSAGE = "Test SMS from EFWS SIM7600E-H device."
 
 
 def read_response(ser: serial.Serial, seconds: float = 2.0) -> str:
@@ -49,7 +49,7 @@ def find_at_port() -> str | None:
                 response = send_at(ser, "AT", 1.5)
 
                 if "OK" in response:
-                    print(f"\nPort AT ditemukan: {port}")
+                    print(f"\nAT port found:{port}")
                     return port
 
         except serial.SerialException as error:
@@ -62,7 +62,7 @@ def main() -> int:
     port = find_at_port()
 
     if not port:
-        print("Tidak ada port AT aktif.")
+        print("There are no active AT ports.")
         return 1
 
     try:
@@ -83,23 +83,23 @@ def main() -> int:
             print(prompt.strip() or "[NO PROMPT]")
 
             if ">" not in prompt:
-                print("Modem tidak memberikan prompt SMS.")
+                print("The modem does not provide SMS prompts.")
                 return 1
 
-            print(f"\nMengirim pesan: {MESSAGE}")
+            print(f"\nSend message:{MESSAGE}")
 
             # Ctrl+Z = byte 0x1A
             ser.write(MESSAGE.encode() + b"\x1A")
 
             result = read_response(ser, 30)
-            print("\n=== HASIL ===")
+            print("\n=== RESULT ===")
             print(result.strip() or "[NO RESPONSE]")
 
             if "+CMGS:" in result and "OK" in result:
-                print("\nSMS berhasil dikirim.")
+                print("\nSMS sent successfully.")
                 return 0
 
-            print("\nSMS gagal atau tidak dikonfirmasi modem.")
+            print("\nSMS failed or not confirmed modem.")
             return 1
 
     except serial.SerialException as error:

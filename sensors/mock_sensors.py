@@ -1,9 +1,9 @@
 """
-Mock sensor layer untuk testing TANPA hardware.
-Menghasilkan data realistis dengan variasi acak dan skenario bahaya terjadwal,
-sehingga alarm logic, database, dan API publisher bisa diuji penuh di desktop/Pi.
+Mock sensor layer for testing WITHOUT hardware.
+Generates realistic data with random variations and scheduled hazard scenarios,
+so the alarm logic, database, and API publisher can be fully tested on the desktop/Pi.
 
-Aktif saat EFWS_RUN_MODE=mock (default).
+Active when EFWS_RUN_MODE=mock (default).
 """
 import math
 import random
@@ -12,17 +12,17 @@ import time
 
 # ─── Helper ──────────────────────────────────────────────────────
 def _jitter(value: float, pct: float = 0.05) -> float:
-    """Tambah noise acak ±pct% ke nilai."""
+    """Add random noise of ±pct% to the value."""
     return round(value * (1 + random.uniform(-pct, pct)), 3)
 
 
 # ─── Base mock ────────────────────────────────────────────────────
 class _MockBase:
-    """Semua mock sensor turunan dari sini; _scenario() bisa override."""
+    """All sensor mocks are derived from here; _scenario() can be overridden."""
 
     def _scenario(self) -> str:
-        """Pilih skenario berdasarkan waktu (siklus 2 menit untuk demo)."""
-        t = time.time() % 120          # siklus 120 detik
+        """Select scenarios based on time (2 minute cycle for demo)."""
+        t = time.time() % 120          # 120 second cycle
         if t < 80:
             return "normal"
         elif t < 100:
@@ -38,11 +38,11 @@ class MockMQ2(_MockBase):
     def read(self) -> dict:
         sc  = self._scenario()
         ppm = _jitter(self.BASELINES[sc], 0.08)
-        v   = round(0.4 + ppm / 1000 * 3.6, 3)   # voltase perkiraan
+        v   = round(0.4 + ppm / 1000 * 3.6, 3)   # estimated voltage
         return {"voltage": v, "ppm": max(0.0, ppm), "_mock": True, "_scenario": sc}
 
 
-# ─── MQ-135 (air quality) ────────────────────────────────────────
+# ─── MQ-135 (air quality) ──────────────────── ────────────────────
 class MockMQ135(_MockBase):
     BASELINES = {"normal": 120, "warning": 500, "critical": 1100}
 
@@ -60,7 +60,7 @@ class MockBME280(_MockBase):
 
     def read(self) -> dict:
         sc = self._scenario()
-        phase = math.sin(time.time() / 30) * 2   # variasi sinusoidal kecil
+        phase = math.sin(time.time() / 30) * 2   # small sinusoidal variations
         return {
             "temperature_c":    round(_jitter(self.TEMP_BASE[sc]) + phase, 2),
             "humidity_percent": round(max(0, _jitter(self.HUM_BASE[sc]) - phase), 2),
@@ -71,7 +71,7 @@ class MockBME280(_MockBase):
 
 # ─── Submersible Pressure Sensor (water level, loop 4-20mA) ──────
 class MockPressureWater(_MockBase):
-    MA_BASE = {"normal": 14.0, "warning": 7.0, "critical": 4.5}  # makin rendah = makin dangkal/kosong
+    MA_BASE = {"normal": 14.0, "warning": 7.0, "critical": 4.5}  # lower = shallower/emptier
     RANGE_M = 5.0
 
     def read(self) -> dict:
@@ -113,11 +113,11 @@ class MockAnemometer(_MockBase):
         return {"speed_ms": round(speed, 2), "_mock": True, "_scenario": sc}
 
 
-# ─── Wind Direction -- UART, muter searah jarum jam tiap ~10 detik ─
+# ─── Wind Direction -- UART, rotates clockwise every ~10 seconds ─
 class MockWindDirection(_MockBase):
     _COMPASS = {
         1: ("N", "Utara"), 2: ("NE", "Timur Laut"), 3: ("E", "Timur"),
-        4: ("SE", "Tenggara"), 5: ("S", "Selatan"), 6: ("SW", "Barat Daya"),
+        4: ("SE", "Tenggara"), 5: ("S", "Selatan"), 6: ("SW", "Southwest"),
         7: ("W", "Barat"), 8: ("NW", "Barat Laut"),
     }
 
@@ -132,15 +132,15 @@ class MockWindDirection(_MockBase):
         }
 
 
-# ─── Battery — Modul Sensor Tegangan DC 0-25V ────────────────────
+# ─── Battery — Voltage Sensor Module DC 0-25V ────────────────────
 class MockBattery(_MockBase):
     PCT_BASE = {"normal": 85.0, "warning": 42.0, "critical": 15.0}
 
     def read(self) -> dict:
         sc  = self._scenario()
         pct = max(0.0, min(100.0, _jitter(self.PCT_BASE[sc], 0.04)))
-        # Range disesuaikan dengan hardware LiFePO4 (BATTERY_MAX_V=14.4V,
-        # BATTERY_MIN_V=10.7V sesuai settings.py)
+        # Range adapted to LiFePO4 hardware (BATTERY_MAX_V=14.4V,
+        # BATTERY_MIN_V=10.7V as per settings.py)
         v   = round(10.7 + pct / 100.0 * (14.4 - 10.7), 2)
         return {"voltage": v, "percent": round(pct, 1), "_mock": True, "_scenario": sc}
 
@@ -148,8 +148,8 @@ class MockBattery(_MockBase):
 class MockFlame(_MockBase):
     def read(self) -> dict:
         sc = self._scenario()
-        # "critical" scenario sesekali memicu deteksi api, supaya jalur flame
-        # bisa ikut teruji tanpa perlu hardware.
+        # "critical" scenarios occasionally trigger fire detection, so that the flame path
+        # can be tested without the need for hardware.
         detected = sc == "critical" and random.random() < 0.3
         voltage = _jitter(0.8, 0.1) if detected else _jitter(2.8, 0.1)
         return {"analog_voltage": voltage, "flame_detected": detected, "_mock": True}
@@ -174,7 +174,7 @@ class MockRainfall(_MockBase):
 
 # ─── Mock Alarm (no GPIO) ────────────────────────────────────────
 class MockAlarmController:
-    """Cetak level alarm ke console; tidak sentuh GPIO."""
+    """Print the alarm level to the console; don't touch GPIO."""
 
     LEVELS = {"none": "🟢", "warning": "🟡", "critical": "🔴"}
     current_level = "none"

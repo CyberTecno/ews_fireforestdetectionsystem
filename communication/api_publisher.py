@@ -1,25 +1,25 @@
 """
-HTTP REST API publisher untuk EFWS — 4 endpoint, satu mesin kirim generik.
+HTTP REST API publisher for EFWS — 4 endpoints, one generic send machine.
 
 Endpoint:
   telemetry_endpoint()   /sensors/telemetry      scheduled, response bawa 'config' (remote threshold)
   location_endpoint()    /sensors/location        scheduled
   heartbeat_endpoint()   /sensors/heartbeat       scheduled, response bawa 'commands'
-  command_ack_endpoint() /sensors/commands/ack    event-driven (dipicu commands dari heartbeat)
+command_ack_endpoint() /sensors/commands/ack event-driven (triggered by commands from heartbeat)
 
 Alur generik (send()):
-  POST → sukses (2xx/3xx)         → return (True, response_json)
-       → gagal JARINGAN           → masuk offline queue (kalau db diberikan) → return (False, None)
-         (DNS gagal, connection refused, timeout, no route ke internet, dst)
-       → gagal HTTP 5xx           → masuk offline queue juga (transient, server lagi bermasalah)
-       → gagal HTTP 4xx           → TIDAK di-retry, TIDAK masuk queue (server sudah menolak
-                                     secara sengaja -- device token salah, payload invalid, dst)
-         → return (False, None), dan endpoint TIDAK online dianggap turun
+POST → success (2xx/3xx) → return (True, response_json)
+→ failed NETWORK → entered offline queue (if db was given) → return (False, None)
+(DNS failed, connection refused, timeout, no route to internet, etc.)
+→ failed HTTP 5xx → entered offline queue too (transient, server is having problems)
+→ failed HTTP 4xx → NOT was retried, NOT entered queue (server has rejected
+intentionally -- wrong device token, invalid payload, etc.)
+→ return (False, None), and the online endpoint NOT is considered down
 
-Offline queue (SQLite api_queue, lihat database/db_manager.py) FIFO per baris,
-retry dilakukan lewat flush_queue() yang dipanggil dari thread terpisah
-(main.py: EFWS._flush_queue_loop) tiap EFWS_CONNECTIVITY_CHECK_SEC (2 menit),
-independen dari siklus baca sensor (3 menit).
+Offline queue (SQLite api_queue, see database/db_manager.py) FIFO per row,
+retry is done via flush_queue() which is called from a separate thread
+(main.py: EFWS._flush_queue_loop) every EFWS_CONNECTIVITY_CHECK_SEC (2 minutes),
+independent of the sensor read cycle (3 minutes).
 """
 import json
 import time
@@ -45,9 +45,9 @@ class APIPublisher:
         self._last_connectivity_check = 0.0
         self._connectivity_check_interval = settings.EFWS_CONNECTIVITY_CHECK_SEC
 
-        # Threshold remote terakhir yang diketahui (dari config/telemetry response).
-        # None selama belum pernah ada response valid -- threshold_resolver akan
-        # fallback penuh ke hardcoded lokal selama ini None.
+        # Last known remote threshold (from config/telemetry response).
+        # None as long as there has never been a valid response -- threshold_resolver will
+        # full fallback to hardcoded locale as long as it is None.
         self.remote_config = None
         self._remote_config_updated_at = 0.0
 
@@ -77,17 +77,17 @@ class APIPublisher:
         reachable = self._is_reachable()
 
         if reachable and not self.online:
-            logger.info("🟢 Koneksi KEMBALI — akan flush offline queue.")
+            logger.info("🟢 Connection BACK — will flush offline queue.")
 
         self.online = reachable
         return self.online
 
     # ------------------------------------------------------------------
-    # Internal: satu kali POST, dengan klasifikasi error eksplisit.
+    # Internal: one time POST, with explicit error classification.
     # Return: (delivered: bool, status_code: int|None, response_json: dict|None,
     #          transient: bool)
-    #   transient=True  -> layak masuk offline queue / retry (jaringan atau 5xx)
-    #   transient=False -> server sengaja menolak (4xx), JANGAN di-retry/queue
+    #   transient=True -> eligible to enter offline queue / retry (network or 5xx)
+    #   transient=False -> server intentionally rejected (4xx), DO NOT retried/queue
     # ------------------------------------------------------------------
     def _post_once(self, endpoint: str, body: str):
         try:
@@ -98,22 +98,22 @@ class APIPublisher:
                 verify=settings.API_VERIFY_SSL,
             )
         except requests.exceptions.Timeout as e:
-            logger.debug("POST timeout ke %s: %s", endpoint, e)
+            logger.debug("POST timeout to %s: %s", endpoint, e)
             self.online = False
             return False, None, None, True  # transient -> queue
         except requests.exceptions.ConnectionError as e:
-            # Mencakup: DNS gagal, internet mati, connection refused, host unreachable.
-            logger.debug("POST connection error ke %s: %s", endpoint, e)
+            # Includes: DNS failed, internet down, connection refused, host unreachable.
+            logger.debug("POST connection error to %s: %s", endpoint, e)
             self.online = False
             return False, None, None, True  # transient -> queue
         except requests.exceptions.RequestException as e:
-            # Error requests lain yang tak terduga -- perlakukan sebagai transient
-            # daripada berisiko membuang data karena error yang belum kita kenali.
-            logger.debug("POST error tak terklasifikasi ke %s: %s", endpoint, e)
+            # Other unexpected requests errors -- treat them as transient
+            # rather than risk throwing away data due to errors we don't yet recognize.
+            logger.debug("POST unclassified error to %s: %s", endpoint, e)
             self.online = False
             return False, None, None, True
 
-        # Server benar-benar merespons -> koneksi jaringan sehat.
+        # Server is actually responding -> network connection is healthy.
         self.online = True
 
         try:
@@ -125,59 +125,59 @@ class APIPublisher:
             return True, resp.status_code, resp_json, False
 
         if resp.status_code >= 500:
-            logger.warning("API HTTP %d (server error, transient) dari %s: %s",
+            logger.warning("API HTTP %d (server error, transient) from %s: %s",
                            resp.status_code, endpoint, resp.text[:150])
             return False, resp.status_code, resp_json, True  # transient -> queue
 
-        # 4xx: server SENGAJA menolak. Jangan retry, jangan queue.
-        logger.warning("API HTTP %d (ditolak server, TIDAK di-retry) dari %s: %s",
+        # 4xx: server ACCIDENTALLY refused. Don't retry, don't queue.
+        logger.warning("API HTTP %d (server rejected, NOT retrieved) from %s: %s",
                        resp.status_code, endpoint, resp.text[:200])
         return False, resp.status_code, resp_json, False
 
     # ------------------------------------------------------------------
-    # Public: kirim generik dengan retry singkat + fallback ke offline queue.
+    # Public: send generic with short retry + fallback to offline queue.
     # ------------------------------------------------------------------
     def send(self, endpoint: str, payload: dict, db=None, label: str = "") -> tuple:
         """
-        Kirim satu payload ke satu endpoint.
+Send one payload to one endpoint.
         Return: (delivered: bool, response_json: dict|None)
 
-        Kalau gagal karena jaringan/5xx (transient) dan `db` diberikan,
-        payload otomatis masuk offline queue (FIFO, lihat db_manager.py).
-        Kalau gagal karena 4xx, TIDAK masuk queue -- itu ditolak backend,
-        bukan masalah konektivitas.
+If it fails because the network/5xx (transient) and `db` are given,
+payload automatically enters the offline queue (FIFO, see db_manager.py).
+If it fails due to 4xx, DOES NOT go into queue -- it's rejected by the backend,
+not a connectivity issue.
         """
         body = json.dumps(payload, default=str)
         last_transient = True
 
-        logger.info("📤 KIRIM %s → %s | body=%s", label or endpoint.split("/")[-1], endpoint, body)
+        logger.info("📤 SEND %s → %s | body=%s", label or endpoint.split("/")[-1], endpoint, body)
 
         for attempt in range(1, settings.API_MAX_RETRIES + 1):
             delivered, status, resp_json, transient = self._post_once(endpoint, body)
             last_transient = transient
 
             if delivered:
-                logger.info("✅ %s terkirim (HTTP %s) → %s", label or endpoint.split("/")[-1], status, endpoint)
+                logger.info("✅ %s sent (HTTP %s) → %s", label or endpoint.split("/")[-1], status, endpoint)
                 return True, resp_json
 
             if not transient:
-                # Server menolak sengaja -- berhenti, jangan retry, jangan queue.
-                logger.warning("🚫 %s ditolak server (HTTP %s) -- dibuang, tidak di-queue.",
+                # The server refused on purpose -- stop, don't retry, don't queue.
+                logger.warning("🚫 %s server rejected (HTTP %s) -- discarded, not queued.",
                               label or endpoint, status)
                 return False, resp_json
 
             if attempt < settings.API_MAX_RETRIES:
                 time.sleep(settings.API_RETRY_DELAY)
 
-        # Habis retry, masih transient (jaringan/5xx) -> masuk offline queue.
+        # After retry, still transient (network/5xx) -> enter offline queue.
         if not self.online:
-            logger.warning("🔴 %s: koneksi TERPUTUS setelah %d percobaan.",
+            logger.warning("🔴 %s: connection LOST after %d attempts.",
                           label or endpoint, settings.API_MAX_RETRIES)
             self._last_connectivity_check = time.time()
 
         if db is not None and last_transient:
             db.queue_api(endpoint, payload)
-            logger.warning("📦 %s disimpan ke offline queue (FIFO).", label or endpoint)
+            logger.warning("📦 %s is saved to offline queue (FIFO).", label or endpoint)
 
         return False, None
 
@@ -189,7 +189,7 @@ class APIPublisher:
         return delivered
 
     # ------------------------------------------------------------------
-    # Endpoint 2: /sensors/telemetry -- response membawa 'config' (remote threshold)
+    # Endpoint 2: /sensors/telemetry -- response carries 'config' (remote thresholds)
     # ------------------------------------------------------------------
     def send_telemetry(self, payload: dict, db=None) -> bool:
         delivered, resp_json = self.send(settings.telemetry_endpoint(), payload, db=db, label="Telemetry")
@@ -202,12 +202,12 @@ class APIPublisher:
         config = resp_json.get("config")
         if isinstance(config, dict):
             if config != self.remote_config:
-                logger.info("⚙️  Threshold remote diperbarui dari backend: %s", config)
+                logger.info("⚙️ Remote threshold updated from backend: %s", config)
             self.remote_config = config
             self._remote_config_updated_at = time.time()
 
     # ------------------------------------------------------------------
-    # Endpoint 3: /sensors/heartbeat -- response membawa 'commands'
+    # Endpoint 3: /sensors/heartbeat -- response carries 'commands'
     # Return: (delivered: bool, commands: list)
     # ------------------------------------------------------------------
     def send_heartbeat(self, payload: dict, db=None) -> tuple:
@@ -220,18 +220,18 @@ class APIPublisher:
         return delivered, commands
 
     # ------------------------------------------------------------------
-    # Endpoint 4: /sensors/commands/ack -- event-driven, dipanggil langsung
-    # setelah eksekusi command, TIDAK lewat scheduler.
+    # Endpoint 4: /sensors/commands/ack -- event-driven, called directly
+    # after executing the command, DOES NOT go through the scheduler.
     # ------------------------------------------------------------------
     def send_command_ack(self, payload: dict, db=None) -> bool:
         delivered, _ = self.send(settings.command_ack_endpoint(), payload, db=db, label="CommandAck")
         return delivered
 
     # ------------------------------------------------------------------
-    # Offline Queue -- generik untuk keempat endpoint sekaligus, FIFO.
-    # Endpoint aktual sudah tersimpan per-item (item["endpoint"]), jadi satu
-    # antrian bisa berisi campuran location/telemetry/heartbeat/ack tanpa
-    # tertukar urutannya.
+    # Offline Queue -- generic for all four endpoints at once, FIFO.
+    # The actual endpoints are stored per-item (item["endpoint"]), so one
+    # queue can contain a mix of locations/telemetry/heartbeat/ack without
+    # order is reversed.
     # ------------------------------------------------------------------
     def flush_queue(self, db, batch_size: int = 10):
         if not self.online:
@@ -242,46 +242,46 @@ class APIPublisher:
         if not pending:
             return 0
 
-        logger.info("📤 Flush %d item dari offline queue (FIFO)...", len(pending))
+        logger.info("📤 Flush %d items from offline queue (FIFO)...", len(pending))
         sent = 0
 
         for item in pending:
             try:
                 payload = json.loads(item["payload"])
             except Exception as e:
-                logger.error("Queue #%d payload rusak: %s", item["id"], e)
+                logger.error("Queue #%d corrupted payload: %s", item["id"], e)
                 db.mark_queue_failed(item["id"], f"invalid json: {e}")
                 continue
 
-            endpoint = item["endpoint"]  # endpoint yang tersimpan saat item di-queue
+            endpoint = item["endpoint"]  # the endpoint that is stored when the item is queued
             body = json.dumps(payload, default=str)
-            logger.info("📤 KIRIM (dari offline queue #%d) → %s | body=%s", item["id"], endpoint, body)
+            logger.info("📤 SEND (from offline queue #%d) → %s | body=%s", item["id"], endpoint, body)
 
             delivered, status, resp_json, transient = self._post_once(endpoint, body)
 
             if delivered:
                 db.mark_queue_sent(item["id"])
                 sent += 1
-                logger.info("✅ Queue #%d (%s) terkirim", item["id"], endpoint.split("/")[-1])
+                logger.info("✅ Queue #%d (%s) sent", item["id"], endpoint.split("/")[-1])
 
-                # Kalau kebetulan ini item telemetry, sekalian sinkronkan config.
+                # If by chance this is a telemetry item, synchronize the config.
                 if endpoint == settings.telemetry_endpoint():
                     self._apply_remote_config(resp_json)
 
             elif transient:
-                # Jaringan putus lagi di tengah flush -- berhenti, PERTAHANKAN
-                # urutan FIFO (jangan skip ke item berikutnya).
+                # The network dropped again in the middle of the flush -- stop and PRESERVE
+                # sequence FIFO (do not skip to the next item).
                 self._last_connectivity_check = time.time()
-                logger.warning("⏸ Flush berhenti di #%d — koneksi putus (FIFO dipertahankan).", item["id"])
+                logger.warning("⏸ Flush stops at #%d — connection dropped (FIFO maintained).", item["id"])
                 break
 
             else:
-                # 4xx -- server menolak permanen, buang dari queue (jangan blokir FIFO selamanya).
+                # 4xx -- server permanently rejected, remove from queue (do not block FIFO forever).
                 db.mark_queue_failed(item["id"], f"server rejected (HTTP {status})")
-                logger.warning("🚫 Queue #%d ditolak server (HTTP %s) -- dibuang.", item["id"], status)
+                logger.warning("🚫 Queue #%d rejected by server (HTTP %s) -- discarded.", item["id"], status)
 
         if sent:
-            logger.info("📤 Flush selesai: %d terkirim, %d pending.", sent, db.count_pending_queue())
+            logger.info("📤 Flush completed: %d sent, %d pending.", sent, db.count_pending_queue())
 
         return sent
 

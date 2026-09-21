@@ -1,46 +1,46 @@
-# README — Setup SIM7600E sebagai Koneksi Utama Raspberry Pi
+# README — Setup SIM7600E as Raspberry Pi Primary Connection
 
-> **Cakupan dokumen ini:** hanya modem **SIM7600E-H**. EFWS juga mendukung **A7670E**
-> sebagai alternatif (`sim_detector.py` auto-detect salah satu yang terpasang), tapi
-> langkah setup A7670E-nya belum didokumentasikan secara terpisah di sini — kalau
-> dibutuhkan, minta dibuatkan dokumen sendiri.
+> **Scope of this document:** **SIM7600E-H** modem only. EFWS also supports **A7670E**
+> as an alternative (`sim_detector.py` auto-detect is the one installed), but
+> The A7670E setup steps have not been documented separately here — if
+> required, ask to make your own documents.
 >
-> **Soal penamaan "A7670E" vs "SIM7670E":** ini modul YANG SAMA, bukan dua modul
-> berbeda. Sebagian unit A7670E melaporkan dirinya sebagai "SIM7670E" saat ditanya
-> `ATI` (Product Identification), tergantung firmware — makanya kode dan beberapa
-> dokumen menyebut "A7670E/SIM7670E" berdampingan. `sim_detector.py` sudah menangani
-> kedua varian penamaan ini dengan benar (sudah diuji lewat simulasi terpisah).
+> **Regarding the naming of "A7670E" vs "SIM7670E":** this is the SAME module, not two modules
+> different. Some A7670E units report themselves as "SIM7670E" when asked
+> `ATI` (Product Identification), depending on the firmware — hence the code and then some
+> the docs mention "A7670E/SIM7670E" side by side. `sim_detector.py` has already taken care of it
+> these two naming variants are correct (tested through separate simulations).
 
-Dokumen ini berisi tutorial setup **SIM7600E-H 4G LTE modem** pada **Raspberry Pi 4** agar menjadi koneksi internet utama, sedangkan **WiFi menjadi koneksi backup**.
+This document contains a tutorial for setting up **SIM7600E-H 4G LTE modem** on **Raspberry Pi 4** so that it becomes the main internet connection, while **WiFi becomes the backup connection**.
 
-Target akhir:
+Final target:
 
 ```text
-SIM7600E 4G = koneksi utama
-WiFi        = koneksi cadangan / fallback otomatis
+SIM7600E 4G = primary connection
+WiFi = automatic backup/fallback connection
 ```
 
-Jika modem SIM7600E dilepas, Raspberry Pi otomatis kembali memakai WiFi. Jika modem dipasang lagi, Raspberry Pi akan mencoba kembali memakai koneksi 4G.
+If the SIM7600E modem is removed, the Raspberry Pi automatically returns to using WiFi. If the modem is installed again, the Raspberry Pi will try again to use a 4G connection.
 
 ---
 
-## 1. Hardware yang digunakan
+## 1. Hardware used
 
 - Raspberry Pi 4
 - SIM7600E-H 4G HAT / USB modem
-- SIM card aktif
+- SIM card is active
 - Antena LTE
-- Kabel USB data
-- Power supply Raspberry Pi yang stabil
-- Koneksi WiFi sebagai backup
+- USB data cable
+- Stable Raspberry Pi power supply
+- WiFi connection as backup
 
-> Catatan penting: modem 4G harus tersambung ke Raspberry Pi melalui **USB data**. GPIO saja biasanya tidak cukup agar modem muncul sebagai device internet.
+> Important note: the 4G modem must be connected to the Raspberry Pi via **USB data**. GPIO alone is usually not enough for the modem to appear as an internet device.
 
 ---
 
-## 2. Cek power Raspberry Pi
+## 2. Check the Raspberry Pi power
 
-Sebelum setup modem, cek apakah Raspberry Pi mengalami undervoltage:
+Before setting up the modem, check whether the Raspberry Pi is experiencing undervoltage:
 
 ```bash
 vcgencmd get_throttled
@@ -52,45 +52,45 @@ Target ideal:
 throttled=0x0
 ```
 
-Jika muncul:
+If it appears:
 
 ```text
 throttled=0x50000
 ```
 
-artinya Raspberry Pi pernah mengalami undervoltage sejak boot. Gunakan power supply yang lebih stabil, minimal:
+meaning that the Raspberry Pi has experienced undervoltage since booting. Use a more stable power supply, at least:
 
 ```text
-5V 3A berkualitas
-lebih aman 5V 4A–5A jika modem ikut dipakai
+Quality 5 V 3 A supply
+safer 5V 4A–5A if a modem is used
 ```
 
-Modem 4G bisa menarik arus cukup besar saat mencari jaringan.
+4G modems can draw quite a large current when searching for a network.
 
 ---
 
-## 3. Cek modem terdeteksi oleh USB
+## 3. Check that the modem is detected by USB
 
-Colok modem SIM7600E ke port USB Raspberry Pi, lalu jalankan:
+Plug the SIM7600E modem into the Raspberry Pi's USB port, then run:
 
 ```bash
 lsusb
 ```
 
-Targetnya muncul device seperti:
+The target appears devices such as:
 
 ```text
 ID 1e0e:9001 Qualcomm / Option SimTech
 ```
 
-atau terdapat nama:
+or contains the name:
 
 ```text
 SIMCom
 Qualcomm
 ```
 
-Lalu cek port serial:
+Then check the serial port:
 
 ```bash
 ls /dev/ttyUSB*
@@ -102,25 +102,25 @@ Target:
 /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4
 ```
 
-Jika belum muncul, coba:
+If it doesn't appear, try:
 
 ```text
-1. Ganti kabel USB, pastikan kabel data
-2. Tekan tombol PWRKEY / POWER modem 2–3 detik
+1. Replace the USB cable, make sure the data cable
+2. Press the modem PWRKEY / POWER button 2–3 seconds
 3. Pindah port USB
-4. Gunakan power supply yang lebih kuat
-5. Coba powered USB hub
+4. Use a more powerful power supply
+5. Try powered USB hub
 ```
 
-Untuk melihat log saat modem dicolok:
+To view logs when the modem is plugged in:
 
 ```bash
 sudo dmesg -wH
 ```
 
-Lalu cabut-colok modem dan lihat apakah muncul log `new USB device`, `SIMCom`, atau `ttyUSB`.
+Then unplug the modem and see if the log `new USB device`, `SIMCom`, or `ttyUSB` appears.
 
-Keluar dari log:
+Exit log:
 
 ```text
 CTRL + C
@@ -128,16 +128,16 @@ CTRL + C
 
 ---
 
-## 4. Install NetworkManager dan ModemManager
+## 4. Install NetworkManager and ModemManager
 
-Install manual:
+Install manually:
 
 ```bash
 sudo apt update
 sudo apt install -y modemmanager network-manager
 ```
 
-Aktifkan service:
+Enable the service:
 
 ```bash
 sudo systemctl enable --now ModemManager
@@ -151,7 +151,7 @@ sudo systemctl restart ModemManager
 sudo systemctl restart NetworkManager
 ```
 
-Reboot agar bersih:
+Reboot to clean:
 
 ```bash
 sudo reboot
@@ -159,27 +159,27 @@ sudo reboot
 
 ---
 
-## 5. Cek ModemManager mendeteksi modem
+## 5. Check ModemManager detects the modem
 
-Setelah Raspberry Pi nyala lagi:
+Once the Raspberry Pi turns on again:
 
 ```bash
 mmcli -L
 ```
 
-Contoh hasil yang benar:
+Example of a correct result:
 
 ```text
 /org/freedesktop/ModemManager1/Modem/0 [QUALCOMM INCORPORATED] SIMCOM_SIM7600E-H
 ```
 
-Cek status device NetworkManager:
+Check NetworkManager device status:
 
 ```bash
 nmcli device status
 ```
 
-Contoh:
+Example:
 
 ```text
 DEVICE         TYPE      STATE         CONNECTION
@@ -188,13 +188,13 @@ cdc-wdm0       gsm       disconnected  --
 eth0           ethernet  unavailable   --
 ```
 
-Jika `cdc-wdm0` muncul sebagai `gsm`, artinya modem siap dibuatkan koneksi.
+If `cdc-wdm0` appears as `gsm`, it means the modem is ready to make a connection.
 
 ---
 
-## 6. Jangan pakai AT manual saat memakai NetworkManager
+## 6. Do not use manual AT when using NetworkManager
 
-Jika sebelumnya memakai Minicom dan menjalankan:
+If previously using Minicom and running:
 
 ```text
 AT+NETOPEN
@@ -202,11 +202,11 @@ AT+CGACT
 AT+HTTPINIT
 ```
 
-sebaiknya hentikan dulu penggunaan AT manual untuk koneksi internet.
+It's best to stop using manual AT for internet connections first.
 
-NetworkManager + ModemManager akan mengatur koneksi modem secara otomatis.
+NetworkManager + ModemManager will set up the modem connection automatically.
 
-Kalau masih ada Minicom terbuka:
+If there is still a Minicom open:
 
 ```text
 CTRL + A
@@ -214,7 +214,7 @@ X
 Yes
 ```
 
-Atau matikan dari terminal:
+Or turn it off from the terminal:
 
 ```bash
 sudo killall minicom 2>/dev/null
@@ -223,29 +223,29 @@ sudo killall picocom 2>/dev/null
 
 ---
 
-## 7. Buat koneksi 4G manual
+## 7. Create a manual 4G connection
 
-Untuk APN, banyak provider Indonesia bisa memakai:
+For APN, many Indonesian providers can use:
 
 ```text
 internet
 ```
 
-Termasuk AXIS/XL, Telkomsel/by.U, dan beberapa Indosat.
+Including AXIS/XL, Telkomsel/by.U, and several Indosat.
 
-Buat koneksi:
+Make a connection:
 
 ```bash
 sudo nmcli connection add type gsm ifname cdc-wdm0 con-name "EWS-4G" apn "internet"
 ```
 
-Jika profile sudah ada, cukup update:
+If the profile already exists, just update it:
 
 ```bash
 sudo nmcli connection modify "EWS-4G" gsm.apn "internet"
 ```
 
-Set 4G sebagai koneksi utama:
+Set 4G as primary connection:
 
 ```bash
 sudo nmcli connection modify "EWS-4G" \
@@ -256,7 +256,7 @@ sudo nmcli connection modify "EWS-4G" \
   ipv6.method ignore
 ```
 
-Aktifkan koneksi 4G:
+Enable 4G connection:
 
 ```bash
 sudo nmcli connection up "EWS-4G"
@@ -264,21 +264,21 @@ sudo nmcli connection up "EWS-4G"
 
 ---
 
-## 8. Jadikan WiFi sebagai backup
+## 8. Make WiFi a backup
 
-Lihat nama koneksi WiFi:
+View the WiFi connection name:
 
 ```bash
 nmcli connection show
 ```
 
-Contoh nama WiFi:
+Example of WiFi name:
 
 ```text
 netplan-wlan0-Uwaterloo
 ```
 
-Set WiFi sebagai backup dengan route metric lebih besar:
+Set WiFi as backup with larger route metrics:
 
 ```bash
 sudo nmcli connection modify "netplan-wlan0-Uwaterloo" \
@@ -288,13 +288,13 @@ sudo nmcli connection modify "netplan-wlan0-Uwaterloo" \
   ipv6.route-metric 600
 ```
 
-> Ganti `netplan-wlan0-Uwaterloo` sesuai nama WiFi yang muncul di Raspberry Pi kamu.
+> Change `netplan-wlan0-Uwaterloo` according to the WiFi name that appears on your Raspberry Pi.
 
 ---
 
-## 9. Cek koneksi utama sudah lewat modem
+## 9. Check that the main connection is via modem
 
-Jalankan:
+Run:
 
 ```bash
 nmcli device status
@@ -307,29 +307,29 @@ cdc-wdm0       gsm       connected      EWS-4G
 wlan0          wifi      connected      netplan-wlan0-Uwaterloo
 ```
 
-Cek route internet:
+Check internet route:
 
 ```bash
 ip route get 8.8.8.8
 ```
 
-Jika 4G sudah menjadi utama, hasilnya biasanya menunjukkan interface modem, misalnya:
+If 4G is the main one, the results usually show the modem interface, for example:
 
 ```text
 dev wwan0
 ```
 
-atau interface sejenis dari modem.
+or similar interface from the modem.
 
-Jika masih menunjukkan:
+If it still shows:
 
 ```text
 dev wlan0
 ```
 
-berarti WiFi masih menjadi jalur utama dan route metric perlu dicek ulang.
+This means that WiFi is still the main route and route metrics need to be checked again.
 
-Tes ping:
+Test with ping:
 
 ```bash
 ping -c 4 8.8.8.8
@@ -337,11 +337,11 @@ ping -c 4 8.8.8.8
 
 ---
 
-## 10. Script otomatis setup koneksi 4G utama + WiFi backup
+## 10. Script automatically setup main 4G connection + backup WiFi
 
-Script ini **tidak menginstall package**. Install `network-manager` dan `modemmanager` harus dilakukan manual seperti bagian sebelumnya.
+This script **does not install packages**. Installing `network-manager` and `modemmanager` must be done manually as in the previous section.
 
-Buat file:
+Create files:
 
 ```bash
 nano ~/ews_network_setup.sh
@@ -361,28 +361,28 @@ DEFAULT_APN="internet"
 
 echo "======================================"
 echo " EWS Network Setup - 4G Main + WiFi Backup"
-echo " Tanpa install package"
+echo "Without installing packages"
 echo "======================================"
 
 if [ "$EUID" -ne 0 ]; then
-  echo "[ERROR] Jalankan dengan sudo:"
+  echo "[ERROR] Run with sudo:"
   echo "sudo bash ~/ews_network_setup.sh"
   exit 1
 fi
 
-echo "[1/7] Cek service ModemManager dan NetworkManager..."
+echo "[1/7] Check ModemManager and NetworkManager services..."
 
 if ! systemctl is-active --quiet ModemManager; then
-  echo "[WARN] ModemManager belum aktif. Mengaktifkan..."
+  echo "[WARN] ModemManager is not active. Activating..."
   systemctl enable --now ModemManager
 fi
 
 if ! systemctl is-active --quiet NetworkManager; then
-  echo "[WARN] NetworkManager belum aktif. Mengaktifkan..."
+  echo "[WARN] NetworkManager is not active. Activating..."
   systemctl enable --now NetworkManager
 fi
 
-echo "[OK] Service aktif."
+echo "[OK] Service is active."
 
 sleep 3
 
@@ -391,12 +391,12 @@ echo "[2/7] Deteksi modem..."
 MODEM_ID=$(mmcli -L 2>/dev/null | grep -oP 'Modem/\K[0-9]+' | head -n 1 || true)
 
 if [ -z "$MODEM_ID" ]; then
-  echo "[WARN] Modem belum terdeteksi oleh ModemManager."
-  echo "[WARN] Script tetap lanjut membuat profile 4G."
-  echo "[WARN] Kalau nanti modem dipasang, NetworkManager akan coba auto-connect."
+  echo "[WARN] The modem has not been detected by ModemManager."
+  echo "[WARN] The script will continue and create the 4G profile."
+  echo "[WARN] If a modem is installed later, NetworkManager will try to auto-connect."
   OPERATOR_CODE=""
 else
-  echo "[OK] Modem ditemukan: Modem/$MODEM_ID"
+  echo "[OK] Modem found: Modem/$MODEM_ID"
 
   echo "[INFO] Enable modem..."
   mmcli -m "$MODEM_ID" --enable || true
@@ -408,7 +408,7 @@ else
   echo "[INFO] Operator code: ${OPERATOR_CODE:-unknown}"
 fi
 
-echo "[3/7] Tentukan APN berdasarkan provider..."
+echo "[3/7] Define APN based on provider..."
 
 case "$OPERATOR_CODE" in
   "51010")
@@ -440,12 +440,12 @@ esac
 echo "[INFO] Provider : $PROVIDER"
 echo "[INFO] APN      : $APN"
 
-echo "[4/7] Buat atau update koneksi 4G..."
+echo "[4/7] Create or update 4G connection..."
 
 if nmcli connection show "$CONNECTION_NAME" >/dev/null 2>&1; then
-  echo "[INFO] Profile $CONNECTION_NAME sudah ada. Update setting..."
+  echo "[INFO] Profile $CONNECTION_NAME already exists. Update settings..."
 else
-  echo "[INFO] Membuat profile $CONNECTION_NAME..."
+  echo "[INFO] Creating profile $CONNECTION_NAME..."
   nmcli connection add type gsm ifname "*" con-name "$CONNECTION_NAME" apn "$APN"
 fi
 
@@ -457,12 +457,12 @@ nmcli connection modify "$CONNECTION_NAME" \
   ipv4.route-metric "$MODEM_METRIC" \
   ipv6.method ignore
 
-echo "[5/7] Set semua koneksi WiFi sebagai backup..."
+echo "[5/7] Set all WiFi connections as backup..."
 
 WIFI_CONNECTIONS=$(nmcli -t -f NAME,TYPE connection show | grep ":802-11-wireless" | cut -d: -f1 || true)
 
 if [ -z "$WIFI_CONNECTIONS" ]; then
-  echo "[WARN] Tidak ada profile WiFi ditemukan."
+  echo "[WARN] No profile WiFi found."
 else
   echo "$WIFI_CONNECTIONS" | while read -r WIFI_NAME; do
     if [ -n "$WIFI_NAME" ]; then
@@ -476,13 +476,13 @@ else
   done
 fi
 
-echo "[6/7] Aktifkan koneksi 4G..."
+echo "[6/7] Enable 4G connection..."
 
 nmcli connection down "$CONNECTION_NAME" >/dev/null 2>&1 || true
 sleep 2
 nmcli connection up "$CONNECTION_NAME" || true
 
-echo "[7/7] Status akhir..."
+echo "[7/7] End state..."
 
 echo ""
 echo "======================================"
@@ -510,7 +510,7 @@ ip route || true
 
 echo ""
 echo "======================================"
-echo " ROUTE KE INTERNET"
+echo "ROUTE TO THE INTERNET"
 echo "======================================"
 ip route get 8.8.8.8 || true
 
@@ -522,24 +522,24 @@ ping -c 4 8.8.8.8 || true
 
 echo ""
 echo "======================================"
-echo " SELESAI"
+echo "FINISHED"
 echo "======================================"
 echo "Target:"
-echo "- Jika modem terpasang dan konek: internet lewat 4G"
-echo "- Jika modem dicabut: otomatis fallback ke WiFi"
-echo "- Jika modem dipasang lagi: otomatis balik ke 4G"
+echo "- If the modem is installed and connected: internet via 4G"
+echo "- If modem is unplugged: automatic fallback to WiFi"
+echo "- If the modem is installed again: automatically returns to 4G"
 echo ""
-echo "Cek manual:"
+echo "Manual check:"
 echo "ip route get 8.8.8.8"
 echo ""
-echo "Kalau lewat modem biasanya muncul:"
+echo "If via modem usually appears:"
 echo "dev wwan0 / ppp0 / usb0"
 echo ""
-echo "Kalau lewat WiFi muncul:"
+echo "If you go through WiFi it appears:"
 echo "dev wlan0"
 ```
 
-Simpan:
+Save:
 
 ```text
 CTRL + O
@@ -553,7 +553,7 @@ Jadikan executable:
 chmod +x ~/ews_network_setup.sh
 ```
 
-Jalankan:
+Run:
 
 ```bash
 sudo bash ~/ews_network_setup.sh
@@ -561,9 +561,9 @@ sudo bash ~/ews_network_setup.sh
 
 ---
 
-## 11. Test fallback otomatis
+## 11. Test automatic fallback
 
-### Saat modem terpasang
+### When the modem is installed
 
 ```bash
 ip route get 8.8.8.8
@@ -575,11 +575,11 @@ Target:
 dev wwan0
 ```
 
-atau interface modem sejenis.
+or similar modem interface.
 
-### Cabut modem
+### Disconnect the modem
 
-Tunggu 30–60 detik, lalu:
+Wait 30–60 seconds, then:
 
 ```bash
 ip route get 8.8.8.8
@@ -591,9 +591,9 @@ Target:
 dev wlan0
 ```
 
-### Pasang modem lagi
+### Plug in the modem again
 
-Tunggu 60 detik, lalu:
+Wait 60 seconds, then:
 
 ```bash
 ip route get 8.8.8.8
@@ -607,7 +607,7 @@ dev wwan0
 
 ---
 
-## 12. Test kecepatan koneksi modem
+## 12. Test the modem connection speed
 
 Install speedtest:
 
@@ -616,46 +616,46 @@ sudo apt update
 sudo apt install -y speedtest-cli
 ```
 
-Jalankan:
+Run:
 
 ```bash
 speedtest-cli --simple
 ```
 
-Cek dulu route agar speedtest benar-benar lewat modem:
+First check the route so that the speedtest actually goes through the modem:
 
 ```bash
 ip route get 8.8.8.8
 ```
 
-Jika masih lewat WiFi, jangan anggap hasil speedtest sebagai hasil SIM7600E.
+If it's still via WiFi, don't treat the speedtest results as SIM7600E results.
 
 ---
 
-## 13. Remote SSH jarak jauh
+## 13. Remote SSH
 
-Untuk akses SSH jarak jauh melalui jaringan 4G, disarankan memakai **Tailscale** karena koneksi seluler biasanya berada di balik CGNAT.
+For remote access to SSH via 4G network, it is recommended to use **Tailscale** because the cellular connection is usually behind CGNAT.
 
-Install Tailscale di Raspberry Pi:
+Install Tailscale on Raspberry Pi:
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 ```
 
-Cek IP Tailscale Raspberry Pi:
+Check Raspberry Pi Tailscale IP:
 
 ```bash
 tailscale ip -4
 ```
 
-SSH dari laptop:
+SSH from laptop:
 
 ```bash
 ssh uwfadmin@IP_TAILSCALE_RASPBERRY_PI
 ```
 
-Contoh:
+Example:
 
 ```bash
 ssh uwfadmin@100.77.65.15
@@ -665,72 +665,72 @@ ssh uwfadmin@100.77.65.15
 
 ## 14. Troubleshooting
 
-### A. `mmcli -L` menampilkan `No modems were found`
+### A. `mmcli -L` displays `No modems were found`
 
-Cek:
+Check:
 
 ```bash
 lsusb
 ls /dev/ttyUSB*
 ```
 
-Jika modem tidak muncul di `lsusb`, masalahnya di hardware:
+If the modem does not appear on `lsusb`, the problem is hardware:
 
 ```text
-1. Kabel USB bukan kabel data
-2. Modem belum ON / PWRKEY belum ditekan
-3. Power kurang
-4. Port USB bermasalah
-5. Modem hanya terhubung ke GPIO, bukan USB
+1. The USB cable is not a data cable
+2. Modem is not ON / PWRKEY has not been pressed
+3. Power is lacking
+4. Faulty USB port
+5. The modem only connects to GPIO, not USB
 ```
 
 ### B. `cdc-wdm0 gsm disconnected`
 
-Artinya modem terdeteksi, tapi koneksi belum dibuat/aktif.
+This means the modem is detected, but the connection has not been established/activated.
 
-Jalankan:
+Run:
 
 ```bash
 sudo nmcli connection up "EWS-4G"
 ```
 
-### C. Route masih lewat WiFi
+### C. Route still via WiFi
 
-Cek metric:
+Check metrics:
 
 ```bash
 ip route
 ```
 
-Pastikan metric modem lebih kecil dari WiFi:
+Make sure the modem metrics are smaller than WiFi:
 
 ```text
 4G  metric 50
 WiFi metric 600
 ```
 
-Update lagi:
+Update again:
 
 ```bash
 sudo nmcli connection modify "EWS-4G" ipv4.route-metric 50
 sudo nmcli connection modify "NAMA_WIFI" ipv4.route-metric 600
 ```
 
-### D. Internet modem tidak jalan
+### D. The internet modem is not working
 
-Cek status modem:
+Check modem status:
 
 ```bash
 mmcli -m 0
 ```
 
-Cek device:
+Check devices:
 
 ```bash
 nmcli device status
 ```
 
-Coba restart service:
+Try restarting the service:
 
 ```bash
 sudo systemctl restart ModemManager
@@ -741,26 +741,26 @@ sudo nmcli connection up "EWS-4G"
 
 ---
 
-## 15. Ringkasan command penting
+## 15. Summary of important commands
 
 ```bash
-# Cek power
+# Check power
 vcgencmd get_throttled
 
-# Cek USB modem
+# Check USB modem
 lsusb
 ls /dev/ttyUSB*
 
-# Cek modem
+# Check the modem
 mmcli -L
 
-# Cek device network
+# Check network devices
 nmcli device status
 
-# Buat koneksi 4G
+# Create a 4G connection
 sudo nmcli connection add type gsm ifname cdc-wdm0 con-name "EWS-4G" apn "internet"
 
-# Set 4G utama
+# Main 4G set
 sudo nmcli connection modify "EWS-4G" \
   connection.autoconnect yes \
   connection.autoconnect-priority 100 \
@@ -775,10 +775,10 @@ sudo nmcli connection modify "NAMA_WIFI" \
   ipv4.route-metric 600 \
   ipv6.route-metric 600
 
-# Aktifkan 4G
+# Enable 4G
 sudo nmcli connection up "EWS-4G"
 
-# Cek route utama
+# Check the main route
 ip route get 8.8.8.8
 
 # Test internet
@@ -787,7 +787,7 @@ ping -c 4 8.8.8.8
 
 ---
 
-## 16. Struktur koneksi final
+## 16. Final connection structure
 
 ```text
 Raspberry Pi 4
@@ -797,8 +797,8 @@ Raspberry Pi 4
 │   └── Route metric: 50
 │
 └── WiFi backup
-    ├── Profile: netplan-wlan0-Uwaterloo / nama WiFi lain
+├── Profile: netplan-wlan0-Uwaterloo / other name WiFi
     └── Route metric: 600
 ```
 
-Dengan konfigurasi ini, Raspberry Pi akan memprioritaskan modem 4G untuk internet, sedangkan WiFi tetap tersedia sebagai backup.
+With this configuration, the Raspberry Pi will prioritize the 4G modem for the internet, while WiFi remains available as a backup.

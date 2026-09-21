@@ -1,26 +1,26 @@
 """
-Modul Sensor Tegangan DC (voltage divider bawaan modul, rasio 1:5 TETAP).
-LANGSUNG ke MCP3008 CH5 -- TIDAK lewat Logic Level Converter.
+DC Voltage Sensor Module (built-in fixed 1:5 voltage divider).
+DIRECT to MCP3008 CH5 -- NOT via Logic Level Converter.
 
-KENAPA TIDAK LEWAT LLC (beda dari MQ2/MQ135/soil/pressure):
-Sesuai wiring resmi modul ini (osoyoo.com/2024/09/08/lesson-13-voltage-
-sensor-for-raspberry-pi/), pin "+" modul disuplai LANGSUNG dari 3.3V Pi
-(bukan 5V) -- makanya batas aman inputnya diturunkan dari 3.3V (3.3 x 5 =
-16.5V), bukan dari 5V. Sinyal "S" keluarannya jadi SUDAH berada di rentang
-0-3.3V, cocok langsung ke MCP3008 (VREF 3.3V) tanpa perlu diturunkan lagi
-lewat LLC. Melewatkannya lewat LLC digital (mis. TXS0108E) justru SALAH --
-chip level-shifter digital seperti itu tidak menerjemahkan tegangan analog
-secara linear, cuma mendeteksi ambang HIGH/LOW.
+WHY NOT VIA LLC (different from MQ2/MQ135/soil/pressure):
+According to the official wiring of this module (osoyoo.com/2024/09/08/lesson-13-voltage-
+sensor-for-raspberry-pi/), the "+" pin of the module is supplied DIRECTLY from the 3.3V Pi
+(not 5V) -- that's why the input safe limit is lowered from 3.3V (3.3 x 5 =
+16.5V), not from 5V. The "S" signal is output so ALREADY is in range
+0-3.3V, fits directly to MCP3008 (VREF 3.3V) without needing to step down again
+via LLC. Skipping it via digital LLC (e.g. TXS0108E) is instead FALSE --
+such digital level-shifter chips do not translate analog voltages
+linearly, only detecting the HIGH/LOW. threshold
 
-Wiring lengkap (5 titik sambung, DUA sisi berbeda):
-  Sisi output/logic (ke Pi) : "+" -> 3.3V, "-" -> GND, "S" -> MCP3008 CH5
-  Sisi input (yang diukur)  : anode -> Battery+, cathode -> Battery-
+Complete wiring (5 connection points, DUA different sides):
+Output side/logic (to Pi) : "+" -> 3.3V, "-" -> GND, "S" -> MCP3008 CH5
+Input side (which is measured): anode -> Battery+, cathode -> Battery-
 
 Kalkulasi:
   V_battery = (raw / 1023) x BATTERY_SENSOR_MAX_V
-  BATTERY_SENSOR_MAX_V = 16.5V (= VREF 3.3V x rasio divider 5), BUKAN 25V --
-  nilai 25V cuma berlaku kalau ADC-nya diberi VREF 5V, bukan kasus project
-  ini. Lihat config/settings.py untuk detail derivasinya.
+BATTERY_SENSOR_MAX_V = 16.5V (= VREF 3.3V x divider ratio 5), NOT 25V --
+The 25V value only applies if the ADC is given VREF 5V, not the project case
+This. See config/settings.py for derivation details.
 """
 from config import settings
 from sensors.mcp3008 import get_mcp3008

@@ -3,23 +3,23 @@
 # ============================================================
 # EFWS — SIM7600 IoT GSM Primary Connection
 #
-# Fungsi:
-# - Mendeteksi modem SIM7600
-# - Mengabaikan bearer default-attach seperti APN CMNET
-# - Menggunakan bearer APN m2minternet
-# - Membuat bearer baru jika belum tersedia
-# - Mengambil IP, prefix, gateway, DNS, dan MTU
-# - Mengonfigurasi wwan0
-# - Menjadikan SIM IoT sebagai koneksi utama
-# - Menjadikan WiFi sebagai backup
+# Function:
+# - Detect modem SIM7600
+# - Ignores default-attach bearers such as CMNET's APN
+# - Using the APN m2minternet bearer
+# - Create a new bearer if it is not available yet
+# - Retrieve IP, prefix, gateway, DNS, and MTU
+# - Configures wwan0
+# - Make SIM IoT the main connection
+# - Make WiFi as a backup
 #
-# Tidak melakukan:
+# Do not do:
 # - ping
 # - curl
 # - DNS lookup
 # - apt update/install
-# - menunggu network-online.target
-# - menunggu WiFi tersambung
+# - waiting for network-online.target
+# - waiting for WiFi to connect
 # ============================================================
 
 APN="m2minternet"
@@ -45,9 +45,9 @@ LOG_FILE="${LOG_DIR}/iot_gsm_connect.log"
 
 mkdir -p "$LOG_DIR"
 
-# Penting:
-# Log dikirim ke stderr agar tidak ikut masuk ke hasil command substitution:
-# VARIABLE=$(fungsi)
+# Important:
+# The log is sent to stderr so that it does not enter the results of the command substitution:
+# VARIABLE=$(function)
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" |
         tee -a "$LOG_FILE" >&2
@@ -111,7 +111,7 @@ find_valid_bearer() {
         bearer_prefix=$(get_bearer_field "$bearer_output" "prefix")
         bearer_gateway=$(get_bearer_field "$bearer_output" "gateway")
 
-        log "Memeriksa Bearer/$bearer_id: type=$bearer_type apn=$bearer_apn connected=$bearer_connected"
+        log "Checking Bearer/$bearer_id: type=$bearer_type apn=$bearer_apn connected=$bearer_connected"
 
         if [ "$bearer_type" = "default" ] &&
            [ "$bearer_apn" = "$APN" ] &&
@@ -171,7 +171,7 @@ wait_for_valid_bearer() {
             return 0
         fi
 
-        log "Menunggu bearer valid: $attempt/$BEARER_WAIT_ATTEMPTS"
+        log "Waiting for valid bearer: $attempt/$BEARER_WAIT_ATTEMPTS"
         sleep "$BEARER_WAIT_DELAY"
     done
 
@@ -208,7 +208,7 @@ wait_for_bearer_ipv4() {
             return 0
         fi
 
-        log "Menunggu konfigurasi IPv4 Bearer/$bearer_id: $attempt/$IP_WAIT_ATTEMPTS"
+        log "Waiting for IPv4 configuration Bearer/$bearer_id: $attempt/$IP_WAIT_ATTEMPTS"
         sleep "$IP_WAIT_DELAY"
     done
 
@@ -230,7 +230,7 @@ set_wifi_backup_metric() {
                 connection.autoconnect-priority 0 \
                 2>/dev/null || true
 
-            log "WiFi profile diset sebagai backup: $connection_name"
+            log "WiFi profile set as backup: $connection_name"
         fi
     done < <(
         nmcli -t -f NAME,TYPE connection show 2>/dev/null
@@ -255,12 +255,12 @@ configure_dns() {
         xargs)
 
     if [ -z "$dns1" ]; then
-        log "DNS bearer tidak ditemukan. DNS tidak diubah."
+        log "DNS bearer not found. DNS is not changed."
         return 0
     fi
 
     {
-        echo "# DNS dari SIM7600 APN $APN"
+        echo "# DNS from SIM7600 APN $APN"
         echo "nameserver $dns1"
 
         if [ -n "$dns2" ]; then
@@ -268,7 +268,7 @@ configure_dns() {
         fi
     } > /etc/resolv.conf
 
-    log "DNS dipasang: $dns1 ${dns2:-}"
+    log "DNS installed: $dns1 ${dns2:-}"
 }
 
 configure_wwan_interface() {
@@ -292,7 +292,7 @@ configure_wwan_interface() {
     mtu="${mtu:-1500}"
 
     if [ "$connected" != "yes" ]; then
-        log "ERROR: Bearer belum connected."
+        log "ERROR: Bearer is not connected."
         return 1
     fi
 
@@ -300,7 +300,7 @@ configure_wwan_interface() {
        [ -z "$prefix" ] ||
        [ -z "$gateway" ]; then
 
-        log "ERROR: Data IPv4 bearer tidak lengkap."
+        log "ERROR: IPv4 bearer data is incomplete."
         log "IP=$ip_address Prefix=$prefix Gateway=$gateway"
         return 1
     fi
@@ -336,17 +336,17 @@ log "============================================================"
 log "EFWS IoT GSM connection start"
 log "APN: $APN"
 
-# Service lokal saja. Tidak membutuhkan internet.
+# Local service only. No internet required.
 systemctl is-active --quiet ModemManager ||
     systemctl start ModemManager
 
 systemctl is-active --quiet NetworkManager ||
     systemctl start NetworkManager
 
-# Mengaktifkan radio WWAN.
+# Enables radio WWAN.
 nmcli radio wwan on 2>/dev/null || true
 
-# Mencegah PPP lama menggunakan modem.
+# Prevent old PPP from using the modem.
 poff -a 2>/dev/null || true
 pkill -9 pppd 2>/dev/null || true
 
@@ -356,16 +356,16 @@ for attempt in $(seq 1 "$MODEM_WAIT_ATTEMPTS"); do
     MODEM_ID=$(get_modem_id)
 
     if [ -n "$MODEM_ID" ]; then
-        log "Modem ditemukan: Modem/$MODEM_ID"
+        log "Modem found: Modem/$MODEM_ID"
         break
     fi
 
-    log "Menunggu modem: $attempt/$MODEM_WAIT_ATTEMPTS"
+    log "Waiting for modem: $attempt/$MODEM_WAIT_ATTEMPTS"
     sleep "$MODEM_WAIT_DELAY"
 done
 
 if [ -z "$MODEM_ID" ]; then
-    log "ERROR: Modem tidak ditemukan."
+    log "ERROR: Modem not found."
     exit 1
 fi
 
@@ -377,14 +377,14 @@ sleep 2
 BEARER_ID=$(find_valid_bearer "$MODEM_ID")
 
 if [ -n "$BEARER_ID" ]; then
-    log "Bearer aktif dan lengkap ditemukan: Bearer/$BEARER_ID"
+    log "Active and complete bearer found: Bearer/$BEARER_ID"
 else
-    log "Bearer valid APN $APN belum ditemukan."
+    log "Valid bearers APN $APN have not been found."
 
     OLD_APN_BEARER=$(find_apn_bearer "$MODEM_ID")
 
     if [ -n "$OLD_APN_BEARER" ]; then
-        log "Bearer/$OLD_APN_BEARER untuk APN $APN tidak valid."
+        log "Bearer/$OLD_APN_BEARER for APN $APN is invalid."
 
         mmcli -m "$MODEM_ID" --simple-disconnect \
             >>"$LOG_FILE" 2>&1 || true
@@ -395,7 +395,7 @@ else
     CONNECTED=0
 
     for attempt in $(seq 1 "$CONNECT_ATTEMPTS"); do
-        log "Percobaan koneksi APN $APN: $attempt/$CONNECT_ATTEMPTS"
+        log "Connection attempt APN $APN: $attempt/$CONNECT_ATTEMPTS"
 
         if mmcli -m "$MODEM_ID" \
             --simple-connect="apn=${APN},ip-type=ipv4" \
@@ -405,54 +405,54 @@ else
             break
         fi
 
-        log "Percobaan koneksi gagal. Menunggu ${CONNECT_RETRY_DELAY} detik."
+        log "Connection attempt failed. Waiting for ${CONNECT_RETRY_DELAY} seconds."
         sleep "$CONNECT_RETRY_DELAY"
     done
 
     if [ "$CONNECTED" -ne 1 ]; then
-        log "ERROR: Gagal menghubungkan APN $APN."
+        log "ERROR: Failed to connect APN $APN."
         exit 1
     fi
 
     BEARER_ID=$(wait_for_valid_bearer "$MODEM_ID")
 
     if [ -z "$BEARER_ID" ]; then
-        log "ERROR: Bearer valid tidak ditemukan setelah connect."
+        log "ERROR: Valid bearer not found after connect."
         exit 1
     fi
 
-    log "Bearer valid muncul setelah connect: Bearer/$BEARER_ID"
+    log "A valid bearer appears after connect: Bearer/$BEARER_ID"
 fi
 
 BEARER_OUTPUT=$(wait_for_bearer_ipv4 "$BEARER_ID")
 
 if [ -z "$BEARER_OUTPUT" ]; then
-    log "ERROR: Bearer/$BEARER_ID tidak memperoleh konfigurasi IPv4."
+    log "ERROR: Bearer/$BEARER_ID did not obtain IPv4 configuration."
     exit 1
 fi
 
 echo "$BEARER_OUTPUT" >>"$LOG_FILE"
 
 if ! configure_wwan_interface "$BEARER_OUTPUT"; then
-    log "ERROR: Gagal mengonfigurasi interface $WWAN_INTERFACE."
+    log "ERROR: Failed to configure interface $WWAN_INTERFACE."
     exit 1
 fi
 
 set_wifi_backup_metric
 configure_dns "$BEARER_OUTPUT"
 
-log "Default route yang terpasang:"
+log "Installed default route:"
 ip route show default |
     tee -a "$LOG_FILE" >&2
 
 if ip route show default |
     grep -qE "default .* dev ${WWAN_INTERFACE} .*metric ${GSM_METRIC}"; then
 
-    log "BERHASIL: SIM IoT menjadi koneksi utama."
+    log "SUCCESSFUL: IoT SIM becomes the primary connection."
 else
-    log "ERROR: Default route $WWAN_INTERFACE belum terpasang."
+    log "ERROR: Default route $WWAN_INTERFACE is not installed."
     exit 1
 fi
 
-log "EFWS IoT GSM connection selesai."
+log "EFWS IoT GSM connection completed."
 exit 0

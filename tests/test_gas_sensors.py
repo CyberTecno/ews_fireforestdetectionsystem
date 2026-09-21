@@ -1,10 +1,10 @@
 """
-TEST 2 — MQ-2 (asap/gas) & MQ-135 (kualitas udara)
-Jalankan SETELAH test_mcp3008.py berhasil.
+TEST 2 — MQ-2 (asap/gas) & MQ-135 (air quality)
+Run AFTER test_mcp3008.py is successful.
 
-PENTING: MQ-2 dan MQ-135 butuh waktu PEMANASAN (preheat) heater internal
-sekitar 24-48 jam sebelum pembacaan stabil & akurat. Untuk testing wiring
-saja (bukan akurasi), tunggu minimal 2-3 menit setelah power-on.
+IMPORTANT: MQ-2 and MQ-135 require time to HEAT (preheat) the internal heater
+about 24-48 hours before the reading is stable & accurate. For wiring testing
+course (not accuracy), wait at least 2-3 minutes after power-on.
 
 Usage: python3 tests/test_gas_sensors.py
 """
@@ -17,19 +17,19 @@ from sensors.mq2 import MQ2Sensor
 from sensors.mq135 import MQ135Sensor
 
 print("=" * 60)
-print("  TEST MQ-2 & MQ-135 (lewat MCP3008)")
+print("TEST MQ-2 & MQ-135 (via MCP3008)")
 print("=" * 60)
 
 try:
     mq2 = MQ2Sensor()
     mq135 = MQ135Sensor()
-    print("[OK] Kedua sensor berhasil diinisialisasi.\n")
+    print("[OK] Both sensors initialized successfully.\n")
 except Exception as e:
-    print(f"[FAIL] Gagal inisialisasi: {e}")
+    print(f"[FAIL] Failed initialization:{e}")
     sys.exit(1)
 
-print("Membaca tiap 2 detik selama 20 detik (Ctrl+C untuk stop)...")
-print("Coba dekatkan korek api yang baru dipadamkan (asap) ke MQ-2 untuk lihat ppm naik.\n")
+print("Read every 2 seconds for 20 seconds (Ctrl+C to stop)...")
+print("Try holding a recently extinguished match (smoke) to MQ-2 to see the ppm rise.\n")
 
 try:
     for i in range(10):
@@ -41,5 +41,5 @@ try:
 except KeyboardInterrupt:
     pass
 
-print("\n[CATATAN] Nilai ppm di atas BELUM dikalibrasi - hanya pendekatan linear.")
-print("Untuk produksi, kalibrasi R0 di udara bersih sesuai datasheet MQ-2/MQ-135.")
+print("\n[NOTE] The ppm values ​​above are NOT calibrated - just a linear approximation.")
+print("For production, calibrate R0 in clean air according to datasheet MQ-2/MQ-135.")

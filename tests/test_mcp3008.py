@@ -1,7 +1,7 @@
 """
 TEST 1 — MCP3008 (ADC SPI)
-Jalankan SEBELUM testing sensor analog apapun (MQ-2/MQ-135/soil), karena
-semua sensor itu bergantung ke chip ini.
+Run BEFORE testing any analog sensor (MQ-2/MQ-135/soil), because
+all sensors depend on this chip.
 
 Usage: python3 tests/test_mcp3008.py
 """
@@ -15,22 +15,22 @@ from sensors.mcp3008 import MCP3008
 print("=" * 60)
 print("  TEST MCP3008 (SPI ADC)")
 print("=" * 60)
-print("Pastikan SPI sudah diaktifkan: sudo raspi-config -> Interface -> SPI -> Yes")
-print("Lalu cek device: ls /dev/spidev* (harus muncul /dev/spidev0.0)\n")
+print("Make sure SPI is enabled: sudo raspi-config -> Interface -> SPI -> Yes")
+print("Then check the device: ls /dev/spidev* (should appear /dev/spidev0.0)\n")
 
 try:
     adc = MCP3008()
-    print(f"[OK] MCP3008 terbuka di SPI bus={adc.bus}, device={adc.device}, VREF={adc.vref}V\n")
+    print(f"[OK] MCP3008 opens on SPI bus={adc.bus}, device={adc.device}, VREF={adc.vref}V\n")
 except Exception as e:
-    print(f"[FAIL] Tidak bisa buka MCP3008: {e}")
-    print("\nKemungkinan penyebab:")
-    print("  - SPI belum diaktifkan (raspi-config)")
-    print("  - spidev belum terinstall (pip install spidev)")
-    print("  - Wiring CLK/DOUT/DIN/CS salah (cek docs/Pinout.md)")
+    print(f"[FAIL] Cannot open MCP3008:{e}")
+    print("\nPossible causes:")
+    print("- SPI has not been activated (raspi-config)")
+    print("- Spidev is not installed (pip install Spidev)")
+    print("- Wiring CLK/DOUT/DIN/CS is wrong (check docs/Pinout.md)")
     sys.exit(1)
 
-print("Membaca semua 8 channel selama 10 detik (Ctrl+C untuk stop lebih awal)...")
-print("Channel yang TIDAK terhubung sensor akan menunjukkan nilai acak/noise - itu NORMAL.\n")
+print("Reads all 8 channels for 10 seconds (Ctrl+C to stop early)...")
+print("Channels that are NOT connected to the sensor will show a random value/noise - that's NORMAL.\n")
 
 try:
     for i in range(10):
@@ -46,6 +46,6 @@ except KeyboardInterrupt:
 finally:
     adc.close()
 
-print("\n[SELESAI] Kalau channel yang ada sensornya (CH0-CH7) menunjukkan nilai")
-print("yang BERUBAH saat Anda tutup sensor dengan tangan / kabel disentuh,")
-print("berarti wiring SPI MCP3008 sudah benar.")
+print("\n[END] If the channel with the sensor (CH0-CH7) shows a value")
+print("which CHANGES when you cover the sensor with your hand / touch the cable,")
+print("means that the wiring of SPI MCP3008 is correct.")

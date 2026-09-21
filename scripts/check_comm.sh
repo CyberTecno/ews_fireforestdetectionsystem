@@ -2,17 +2,17 @@
 # =============================================================================
 # EWS Communication Check (check_comm.sh)
 # =============================================================================
-# Tujuan: verifikasi end-to-end jalur komunikasi EFWS — bukan sekadar cek
-# apakah ews_network_setup.sh sukses, tapi:
+# Goal: end-to-end verification of the EFWS communication path — not just a check
+# is ews_network_setup.sh successful, but:
 #
-#   1. ModemManager: modem SIM7600 terdeteksi, state & primary port
-#   2. nmcli: profil EWS-4G aktif dan interface wwan0 punya IP
-#   3. Default route: traffic ke internet keluar via interface GSM
-#   4. Tailscale: tidak menggeser default route atau meng-hijack DNS
-#   5. Reachability nyata ke EFWS_API_URL (DNS resolve + HTTP)
+#   1. ModemManager: modem SIM7600 detected, state & primary port
+#   2. nmcli: profile EWS-4G is active and interface wwan0 has IP
+#   3. Default route: traffic to the internet exits via interface GSM
+#   4. Tailscale: does not shift the default route or hijack DNS
+#   5. Real reachability to EFWS_API_URL (DNS resolve + HTTP)
 #
-# Tidak lagi memanggil sim_detector.py atau kode Python apapun.
-# Bisa dijalankan kapan saja tanpa harus stop efws.service.
+# No longer calls sim_detector.py or any Python code.
+# Can be run at any time without having to stop efws.service.
 #
 # Usage:
 #   sudo /home/uwfadmin/ews/scripts/check_comm.sh
@@ -32,15 +32,15 @@ f()    { printf '  \033[1;31m[FAIL]\033[0m %s\n' "$*";   fail=$((fail+1)); }
 info() { printf '  %s\n' "$*"; }
 
 # =============================================================================
-# 1. ModemManager: modem SIM7600 terdeteksi?
+# 1. ModemManager: modem SIM7600 detected?
 # =============================================================================
 log "1. ModemManager & SIM7600"
 
 MODEM_ID=$(mmcli -L 2>/dev/null | grep -oP 'Modem/\K[0-9]+' | head -n1 || true)
 if [ -z "$MODEM_ID" ]; then
-    f "mmcli tidak menemukan modem sama sekali. Cek 'lsusb' dan 'ls /dev/ttyUSB*'."
+    f "mmcli doesn't find the modem at all. Check 'lsusb' and 'ls /dev/ttyUSB*'."
 else
-    ok "Modem terdeteksi ModemManager, ID=$MODEM_ID"
+    ok "Modem detected ModemManager, ID=$MODEM_ID"
     MM_INFO=$(mmcli -m "$MODEM_ID" --output-keyvalue 2>/dev/null)
 
     MODEL=$(echo "$MM_INFO" | grep -oP 'modem\.generic\.model\s*:\s*\K.*' || true)
@@ -54,12 +54,12 @@ else
     info "SIM status    : ${SIM_STATUS:-unknown}"
 
     case "$STATE" in
-        connected)   ok "Modem sudah dalam state 'connected'." ;;
-        registered)  ok "Modem sudah registrasi ke jaringan (belum connected — mungkin bearernya belum aktif)." ;;
-        searching)   w  "Modem sedang mencari jaringan. Tunggu beberapa saat." ;;
-        locked)      f  "Modem berstatus 'locked' — SIM butuh PIN. Nonaktifkan PIN SIM." ;;
-        disabled)    w  "Modem berstatus 'disabled'." ;;
-        *)           info "State modem: ${STATE:-tidak diketahui}" ;;
+        connected)   ok "The modem is in the 'connected' state." ;;
+        registered)  ok "The modem has registered to the network (not yet connected — maybe the bearer is not active yet)." ;;
+        searching)   w  "The modem is searching for a network. Wait a moment." ;;
+        locked)      f  "The modem is 'locked' — SIM needs PIN. Disable PIN SIM." ;;
+        disabled)    w  "Modem status is 'disabled'." ;;
+        *)           info "Modem state: ${STATE:-unknown}" ;;
     esac
 
     # Signal quality
@@ -68,46 +68,46 @@ else
     if [ -n "$SIG" ]; then
         info "Signal RSSI   : ${SIG} dBm"
     else
-        # Fallback ke CSQ via AT command jika signal-get kosong
+        # Fallback to CSQ via AT command if signal-get is empty
         CSQ_LINE=$(mmcli -m "$MODEM_ID" 2>/dev/null \
             | grep -i "signal" | head -n1 || true)
         [ -n "$CSQ_LINE" ] && info "Signal info   : $CSQ_LINE"
     fi
 
-    # cek apakah /dev/ttyUSB2 ada (AT command port SIM7600)
+    # check if /dev/ttyUSB2 exists (AT command port SIM7600)
     if [ -e "/dev/ttyUSB2" ]; then
-        ok "Port AT /dev/ttyUSB2 tersedia."
+        ok "AT port /dev/ttyUSB2 available."
     else
-        w "/dev/ttyUSB2 tidak ditemukan — pastikan SIM7600 sudah terpasang dan driver QMI/CDC loaded."
-        info "Cek: ls /dev/ttyUSB* && lsusb"
+        w "/dev/ttyUSB2 not found — make sure SIM7600 is installed and the QMI/CDC driver is loaded."
+        info "Check: ls /dev/ttyUSB* && lsusb"
     fi
 fi
 
 # =============================================================================
-# 2. nmcli: profil EWS-4G & interface GSM
+# 2. nmcli: EWS-4G profile & interface GSM
 # =============================================================================
-log "2. nmcli — Profil $CONNECTION_NAME & Interface GSM"
+log "2. nmcli — Profile $CONNECTION_NAME & Interface GSM"
 
 if ! nmcli connection show "$CONNECTION_NAME" &>/dev/null; then
-    f "Profil nmcli '$CONNECTION_NAME' tidak ditemukan. Jalankan 'sudo systemctl start gsm-connect' atau buat manual."
+    f "Nmcli profile '$CONNECTION_NAME' not found. Run 'sudo systemctl start gsm-connect' or create it manually."
 else
-    ok "Profil nmcli '$CONNECTION_NAME' ada."
+    ok "The nmcli profile '$CONNECTION_NAME' exists."
 
     CONN_STATE=$(nmcli -t -f GENERAL.STATE connection show --active "$CONNECTION_NAME" 2>/dev/null \
         | cut -d: -f2 || true)
     CONN_APN=$(nmcli -t -g gsm.apn connection show "$CONNECTION_NAME" 2>/dev/null || true)
 
-    info "APN profil    : ${CONN_APN:-tidak diketahui}"
-    info "State aktif   : ${CONN_STATE:-tidak aktif}"
+    info "APN profile : ${CONN_APN:-unknown}"
+    info "Active state: ${CONN_STATE:-inactive}"
 
     if nmcli connection show --active "$CONNECTION_NAME" &>/dev/null; then
-        ok "Profil '$CONNECTION_NAME' sedang AKTIF."
+        ok "Profile '$CONNECTION_NAME' is ACTIVE."
     else
-        f "Profil '$CONNECTION_NAME' ADA tapi tidak AKTIF. Coba: sudo nmcli connection up $CONNECTION_NAME"
+        f "Profile '$CONNECTION_NAME' EXISTS but is not ACTIVE. Try: sudo nmcli connection up $CONNECTION_NAME"
     fi
 fi
 
-# Cek IP di interface GSM (wwan0, cdc-wdm0, usb0)
+# Check IP on interface GSM (wwan0, cdc-wdm0, usb0)
 GSM_IFACE=""
 for iface in wwan0 cdc-wdm0 usb0; do
     if ip addr show "$iface" 2>/dev/null | grep -q "inet "; then
@@ -118,116 +118,116 @@ done
 
 if [ -n "$GSM_IFACE" ]; then
     GSM_IP=$(ip addr show "$GSM_IFACE" | grep "inet " | awk '{print $2}' | head -n1)
-    ok "Interface GSM $GSM_IFACE mendapat IP: $GSM_IP"
+    ok "GSM interface $GSM_IFACE obtained IP: $GSM_IP"
 else
-    w "Tidak ada IP di wwan0/cdc-wdm0/usb0. Cek: 'ip addr show wwan0' dan 'journalctl -u ews-gsm -n 30'."
+    w "No IP on wwan0/cdc-wdm0/usb0. Check: 'ip addr show wwan0' and 'journalctl -u ews-gsm -n 30'."
 fi
 
 # =============================================================================
-# 3. Default route — keluar via interface GSM?
+# 3. Default route — exit via interface GSM?
 # =============================================================================
 log "3. Default Route & Internet Path"
 
 ROUTE_INFO=$(ip route get 8.8.8.8 2>&1 || true)
 info "$ROUTE_INFO"
 ACTIVE_IFACE=$(echo "$ROUTE_INFO" | grep -oP 'dev \K[^ ]+' | head -n1 || true)
-info "Interface aktif untuk internet saat ini: ${ACTIVE_IFACE:-tidak diketahui}"
+info "Current active interface for the internet: ${ACTIVE_IFACE:-unknown}"
 
 if echo "$ACTIVE_IFACE" | grep -qE "wwan|cdc-wdm|usb"; then
-    ok "Default route keluar via interface GSM ($ACTIVE_IFACE) — sesuai yang diinginkan."
+    ok "Default route exits via interface GSM ($ACTIVE_IFACE) — as desired."
 elif [ -n "$ACTIVE_IFACE" ]; then
-    w "Default route via '$ACTIVE_IFACE' (bukan GSM). Kalau GSM juga tersambung, cek ulang route metric-nya."
-    info "Cek: 'ip route show' dan 'nmcli connection show $CONNECTION_NAME | grep metric'"
+    w "Default route via '$ACTIVE_IFACE' (not GSM). If GSM is also connected, double-check the route metrics."
+    info "Check: 'ip route show' and 'nmcli connection show $CONNECTION_NAME | grep metric'"
 else
-    f "Tidak ada default route. Koneksi internet belum tersedia."
+    f "There is no default route. Internet connection is not yet available."
 fi
 
 # =============================================================================
-# 4. Tailscale — pastikan tidak menggeser default route atau DNS
+# 4. Tailscale — make sure not to shift the default route or DNS
 # =============================================================================
 log "4. Tailscale"
 
 if ! command -v tailscale > /dev/null 2>&1; then
-    info "Tailscale tidak terinstall di sistem ini — dilewati."
+    info "Tailscale is not installed on this system — skipped."
 else
     if ! systemctl is-active --quiet tailscaled; then
-        w "tailscaled terinstall tapi tidak aktif."
+        w "tailscaled is installed but not active."
     else
-        ok "tailscaled aktif."
+        ok "active tailscaled."
 
         TS_PREFS=$(tailscale debug prefs 2>/dev/null || true)
 
         if echo "$TS_PREFS" | grep -qi '"RouteAll": *true\|"AcceptRoutes": *true'; then
-            w "Tailscale AcceptRoutes aktif — bisa menggeser default route jika ada exit node di tailnet."
+            w "Tailscale AcceptRoutes is active — can shift the default route if there is an exit node in the tailnet."
         else
-            ok "AcceptRoutes tidak aktif — default route GSM tidak terganggu Tailscale."
+            ok "AcceptRoutes is off — default route GSM is not interrupted by Tailscale."
         fi
 
         if echo "$TS_PREFS" | grep -qi '"ExitNodeID": *""' || \
            ! echo "$TS_PREFS" | grep -qi '"ExitNodeID"'; then
-            ok "Tidak sedang memakai Tailscale exit node."
+            ok "Not currently using the Tailscale exit node."
         else
-            w "Sedang memakai Tailscale exit node — SEMUA traffic keluar via tailnet, bukan GSM langsung."
+            w "Currently using Tailscale exit node — ALL traffic exits via tailnet, not GSM directly."
         fi
 
         if command -v resolvectl > /dev/null 2>&1; then
             RESOLV_INFO=$(resolvectl status 2>/dev/null || true)
             if echo "$RESOLV_INFO" | grep -q "100.100.100.100"; then
-                w "Tailscale MagicDNS aktif sebagai DNS server. Kalau DNS lambat/gagal, coba: sudo tailscale set --accept-dns=false"
+                w "Tailscale MagicDNS is the active DNS server. If DNS is slow/failing, try: sudo tailscale set --accept-dns=false"
             else
-                ok "Tailscale tidak mengambil alih DNS resolver global."
+                ok "Tailscale does not take over the global resolver DNS."
             fi
         fi
     fi
 fi
 
 # =============================================================================
-# 5. DNS resolve + reachability nyata ke EFWS_API_URL
+# 5. DNS resolve + real reachability to EFWS_API_URL
 # =============================================================================
-log "5. DNS & Reachability ke EFWS_API_URL"
+log "5. DNS & Reachability to EFWS_API_URL"
 
-# Ambil EFWS_API_URL dari .env project
+# Take EFWS_API_URL from .env project
 API_URL=$(grep -m1 '^EFWS_API_URL=' "$PROJECT_DIR/.env" 2>/dev/null \
     | cut -d= -f2- \
     | sed -e 's/\r$//' -e "s/^['\"]//;s/['\"]$//" \
     || true)
 
 if [ -z "$API_URL" ]; then
-    w "Tidak menemukan EFWS_API_URL di $PROJECT_DIR/.env — lewati tes reachability."
+    w "Didn't find EFWS_API_URL in $PROJECT_DIR/.env — skip reachability test."
 else
     API_HOST=$(echo "$API_URL" | sed -E 's#^[a-zA-Z]+://##; s#[/:].*$##')
-    info "Endpoint dari .env : $API_URL"
+    info "Endpoint of .env : $API_URL"
     info "Host               : $API_HOST"
 
     if command -v getent > /dev/null 2>&1; then
         DNS_RESULT=$(getent hosts "$API_HOST" 2>&1 || true)
         if [ -n "$DNS_RESULT" ] && ! echo "$DNS_RESULT" | grep -qi "failed\|not found\|error"; then
-            ok "DNS resolve sukses: $DNS_RESULT"
+            ok "DNS resolve successful: $DNS_RESULT"
         else
-            f "DNS resolve GAGAL untuk '$API_HOST'. Cek 'resolvectl status' atau APN operator."
+            f "DNS resolves FAILED to '$API_HOST'. Check the 'resolvectl status' or APN operator."
         fi
     fi
 
     if command -v curl > /dev/null 2>&1; then
         HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$API_URL" 2>&1 || true)
         if [ -n "$HTTP_CODE" ] && [ "$HTTP_CODE" != "000" ]; then
-            ok "Endpoint dapat dihubungi (HTTP $HTTP_CODE) via interface $ACTIVE_IFACE."
+            ok "Endpoint is reachable (HTTP $HTTP_CODE) via interface $ACTIVE_IFACE."
         else
-            f "Gagal reach $API_URL (curl/HTTP: $HTTP_CODE). Cek koneksi & firewall APN."
+            f "Failed to reach $API_URL (curl/HTTP: $HTTP_CODE). Check connection & firewall APN."
         fi
     fi
 fi
 
 # =============================================================================
-# Ringkasan
+# Summary
 # =============================================================================
-log "Ringkasan"
+log "Summary"
 info "OK=$pass  WARN=$warn  FAIL=$fail"
 if [ "$fail" -gt 0 ]; then
-    info "Ada kegagalan yang perlu ditindaklanjuti."
-    info "Mulai dari: journalctl -u ews-gsm -n 50"
+    info "There are failures that need to be followed up."
+    info "Starting from: journalctl -u ews-gsm -n 50"
 elif [ "$warn" -gt 0 ]; then
-    info "Tidak ada kegagalan fatal, ada beberapa hal untuk diperiksa manual."
+    info "There are no fatal failures, there are a few things to check manually."
 else
-    info "Semua pengecekan lolos — jalur komunikasi sehat."
+    info "All checks pass — communication lines are healthy."
 fi

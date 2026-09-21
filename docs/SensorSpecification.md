@@ -1,14 +1,14 @@
 # EFWS — Sensor Specification
 
-Referensi lengkap semua komponen hardware yang digunakan dalam EFWS. Untuk wiring dan
-pin assignment, lihat [`docs/Pinout.md`](Pinout.md). Untuk konfigurasi software (channel
-ADC, alamat I2C, port serial), lihat [`config/settings.py`](../config/settings.py).
+Complete reference of all hardware components used in EFWS. For wiring and
+pin assignment, see [`docs/Pinout.md`](Pinout.md). For software configuration (channel
+ADC, address I2C, serial port), see [`config/settings.py`](../config/settings.py).
 
 ---
 
 ## 1. Raspberry Pi 4 Model B
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | SoC | Broadcom BCM2711 Quad-Core Cortex-A72 (ARM v8) 64-bit @ 1.5 GHz |
 | RAM | 8 GB LPDDR4-3200 |
@@ -17,29 +17,29 @@ ADC, alamat I2C, port serial), lihat [`config/settings.py`](../config/settings.p
 | Wireless | Wi-Fi 802.11ac (2.4 + 5 GHz), Bluetooth 5.0 BLE |
 | USB | 2× USB 3.0, 2× USB 2.0 |
 | GPIO | 40-pin header (BCM numbering) |
-| Display | 2× Micro HDMI (hingga dual 4K@60fps) |
-| Catu daya | USB-C 5 V / 3 A |
-| Interface yang dipakai EFWS | SPI (MCP3008), I2C (BME280 + Rainfall), UART (Wind Direction), USB (A7670E + RS485), GPIO (Relay, LED) |
+| Display |2× Micro HDMI (up to dual 4K@60fps)|
+|Power supplies| USB-C 5 V / 3 A |
+|The interface used is EFWS| SPI (MCP3008), I2C (BME280 + Rainfall), UART (Wind Direction), USB (A7670E + RS485), GPIO (Relay, LED) |
 
 ### Breakout: GPIO T-Cobbler
-Kabel akan memfasilitasi koneksi GPIO ke breadboard selama
-pengembangan/prototyping. Ke PCB pada instalasi permanen.
+The cable will facilitate the connection of the GPIO to the breadboard during
+development/prototyping. To PCB on permanent installation.
 
 ---
 
 ## 2. ADC — MCP3008
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Tipe | 10-bit SAR ADC, 8-channel single-ended |
 | Interface | SPI (bus 0, CE0) |
 | VREF | 3.3 V (= VDD) |
 | Resolusi | 1023 step (0–3.3 V per step ≈ 3.23 mV) |
-| Penggunaan | Baca MQ-2, MQ-135, Soil×2, Pressure, Battery, Flame |
+|Use|Read MQ-2, MQ-135, Soil×2, Pressure, Battery, Flame|
 
 **Channel mapping (lihat `config/settings.py`):**
 
-| CH | Sensor | Via LLC | Catatan |
+| CH | Sensor | Via LLC |Notes|
 |----|--------|---------|---------|
 | 0 | MQ-2 AOUT | ✅ (5V→3.3V) | `ADC_CHANNEL_MQ2` |
 | 1 | MQ-135 AOUT | ✅ (5V→3.3V) | `ADC_CHANNEL_MQ135` |
@@ -48,37 +48,37 @@ pengembangan/prototyping. Ke PCB pada instalasi permanen.
 | 4 | Pressure Sensor | ❌ (via R_BURDEN 100 Ω) | `ADC_CHANNEL_PRESSURE` |
 | 5 | Battery Voltage | ❌ (native 3.3V output) | `ADC_CHANNEL_BATTERY` |
 | 6 | Flame Sensor AO | ❌ (native 3.3V output) | `ADC_CHANNEL_FLAME_AO` |
-| 7 | — | — | Spare, tidak dikabel |
+| 7 | — | — |Spare, not wired|
 
 ---
 
 ## 3. Logic Level Converter (LLC)
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Tipe | Bidirectional, 4-channel |
-| Tegangan sisi HV | 5 V (dari Rail 5 V) |
-| Tegangan sisi LV | 3.3 V (dari Rail 3.3 V Pi) |
-| Channel yang terpakai | 4 dari 4 (MQ-2, MQ-135, Soil Surface, Soil Deep) |
+|HV side voltage|5 V (from 5 V Rail)|
+|LV side voltage|3.3 V (from Rail 3.3 V Pi)|
+|Channels used|4 of 4 (MQ-2, MQ-135, Soil Surface, Soil Deep)|
 
-> **Penting:** LLC ini adalah level-shifter **analog linear** untuk sinyal ADC.
-> Jangan gunakan tipe digital (TXS0108E, dll.) untuk jalur ini — chip logic-level-shifter
-> digital hanya mendeteksi ambang HIGH/LOW, tidak menerjemahkan tegangan analog secara linear.
+> **Important:** This LLC is a **linear analog** level-shifter for the signal ADC.
+> Do not use digital type (TXS0108E, etc.) for this line — logic-level-shifter chip
+> digital only detects the threshold HIGH/LOW, it does not translate the analog voltage linearly.
 
 ---
 
 ## 4. MQ-2 — Gas & Smoke Sensor
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Gas yang dideteksi | LPG, Butane, Propane, Methane, Hydrogen, Smoke |
-| Tegangan kerja | 5 V DC |
-| Output dipakai | AOUT (analog) → LLC CH1 → MCP3008 CH0 |
-| Output tidak dipakai | DOUT (digital, tidak dikabel) |
+|Detected gas| LPG, Butane, Propane, Methane, Hydrogen, Smoke |
+|Working voltage| 5 V DC |
+|Output is used| AOUT (analog) → LLC CH1 → MCP3008 CH0 |
+|Output is not used|DOUT (digital, unwired)|
 | Driver | `sensors/mq2.py` |
 | Setting | `config/settings.py`: `ADC_CHANNEL_MQ2`, `SMOKE_MQ2_CRIT_PPM`, `SMOKE_WEIGHT_MQ2` |
 
-**Peran dalam `smokeLevel`:**
+**Role in `smokeLevel`:**
 
 ```
 smokeLevel = (mq2_ppm / MQ2_CRIT_PPM × W_MQ2 + mq135_ppm / MQ135_CRIT_PPM × W_MQ135) × 100
@@ -86,114 +86,114 @@ smokeLevel = (mq2_ppm / MQ2_CRIT_PPM × W_MQ2 + mq135_ppm / MQ135_CRIT_PPM × W_
 
 Default: `MQ2_CRIT_PPM = 1000`, `W_MQ2 = 0.55` (bobot 55%).
 
-> **Catatan:** Sensor MQ memerlukan warm-up ~2 menit setelah power-on untuk pembacaan
-> stabil. Nilai pada menit pertama setelah boot dapat tidak akurat.
+> **Note:** The MQ sensor requires a ~2 minute warm-up after power-on for readings
+> stable. Values ​​in the first minutes after booting may be inaccurate.
 
 ---
 
 ## 5. MQ-135 — Air Quality Sensor
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Gas yang dideteksi | NH₃, NOx, Alcohol, Benzene, Smoke, CO₂ (indikatif) |
-| Tegangan kerja | 5 V DC |
-| Output dipakai | AOUT (analog) → LLC CH2 → MCP3008 CH1 |
-| Output tidak dipakai | DOUT (digital, tidak dikabel) |
+|Detected gas| NH₃, NOx, Alcohol, Benzene, Smoke, CO₂ (indikatif) |
+|Working voltage| 5 V DC |
+|Output is used| AOUT (analog) → LLC CH2 → MCP3008 CH1 |
+|Output is not used|DOUT (digital, unwired)|
 | Driver | `sensors/mq135.py` |
 | Setting | `config/settings.py`: `ADC_CHANNEL_MQ135`, `SMOKE_MQ135_CRIT_PPM`, `SMOKE_WEIGHT_MQ135` |
 
-**Peran dalam `smokeLevel`:** bobot 45% (`W_MQ135 = 0.45`), `MQ135_CRIT_PPM = 1000`.
+**Role in `smokeLevel`:** 45% weight (`W_MQ135 = 0.45`), `MQ135_CRIT_PPM = 1000`.
 
 ---
 
-## 6. BME280 — Suhu, Kelembapan, Tekanan Udara
+## 6. BME280 — Temperature, Humidity, Air Pressure
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Rentang suhu | −40 hingga +85 °C |
-| Akurasi suhu | ±1 °C (tipikal) |
-| Rentang kelembapan | 0–100 % RH |
-| Akurasi kelembapan | ±3 % RH |
-| Rentang tekanan | 300–1100 hPa |
-| Tegangan kerja | 3.3 V |
-| Interface | I2C (shared bus dengan Rainfall Sensor) |
-| Alamat I2C | `0x76` (default; `0x77` jika jumper di-solder) — `EFWS_BME280_ADDR` |
+|Temperature range|−40 to +85 °C|
+|Temperature accuracy| ±1 °C (tipikal) |
+|Humidity range| 0–100 % RH |
+|Humidity accuracy| ±3 % RH |
+|Pressure range| 300–1100 hPa |
+|Working voltage| 3.3 V |
+| Interface |I2C (shared bus with Rainfall Sensor)|
+|Address I2C|`0x76` (default; `0x77` if jumper is soldered) — `EFWS_BME280_ADDR`|
 | Driver | `sensors/bme280.py` |
 
-**Field yang dikirim ke API:** `temp`, `humidity` (dalam payload telemetry).
-Kolom `pressure_hpa` disimpan di SQLite (`sensor_readings`) tapi tidak dikirim ke API
-(tidak ada field pressure ambient di kontrak telemetry).
+**Fields sent to API:** `temp`, `humidity` (in telemetry payload).
+Column `pressure_hpa` is saved in SQLite (`sensor_readings`) but not sent to API
+(no ambient pressure field in the telemetry contract).
 
 ---
 
 ## 7. Soil Moisture Sensor — Tipe Resistif
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Tipe | Resistif (dua probe logam) |
-| Tegangan kerja | 5 V DC |
-| Output dipakai | AOUT (analog) → LLC → MCP3008 |
-| Jumlah probe | 2 (Surface CH2, Deep CH3) |
+|Working voltage| 5 V DC |
+|Output is used| AOUT (analog) → LLC → MCP3008 |
+|Number of probes| 2 (Surface CH2, Deep CH3) |
 | Driver | `sensors/soil.py` |
 
-**Konfigurasi dua probe:**
+**Two probe configuration:**
 
-| Probe | Fungsi | Channel | Kedalaman |
+| Probe |Function| Channel |Depth|
 |-------|--------|---------|-----------|
-| Surface | Kelembapan permukaan | MCP3008 CH2 (via LLC CH3) | 0–30 cm |
-| Deep | Kelembapan dalam | MCP3008 CH3 (via LLC CH4) | 30–60 cm |
+| Surface |Surface moisture| MCP3008 CH2 (via LLC CH3) | 0–30 cm |
+| Deep |Internal moisture| MCP3008 CH3 (via LLC CH4) | 30–60 cm |
 
-**Output:** `moisture_percent` (0–100 %). Nilai **rendah = kering = berbahaya**
+**Output:** `moisture_percent` (0–100 %). **low value = dry = dangerous**
 (`lower_is_worse=True`, threshold default: surface & deep < 10 %).
 
-> **Keterbatasan sensor resistif:** Rentan korosi probe jangka panjang di tanah basah.
-> Pertimbangkan kalibrasi ulang setelah 3–6 bulan instalasi di lapangan.
+> **Limitations of resistive sensors:** Susceptible to long-term probe corrosion in wet soil.
+> Consider recalibration after 3–6 months of field installation.
 
 ---
 
 ## 8. Gravity Tipping Bucket Rainfall Sensor — DFRobot SEN0575
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Resolusi | ±0.2794 mm per tipping |
 | Interface | I2C |
-| Alamat I2C | `0x1D` — shared bus dengan BME280, tidak bentrok (`RAINFALL_I2C_ADDRESS`) |
-| Tegangan kerja | 3.3 V |
+|Address I2C|`0x1D` — shared bus with BME280, no conflict (`RAINFALL_I2C_ADDRESS`)|
+|Working voltage| 3.3 V |
 | Driver | `sensors/rainfall.py` |
-| PID/VID validasi | `0x100C0` / `0x3343` (dicek saat `__init__`) |
+| PID/VID validasi |`0x100C0` / `0x3343` (checked when `__init__`)|
 
-**Field yang tersedia dari sensor:**
+**Available fields of the sensor:**
 
-| Field | Keterangan |
+| Field |Information|
 |-------|-----------|
-| `rainfall_total_mm` | Counter kumulatif sejak sensor power-on (tidak pernah reset otomatis) |
-| `rainfall_last_hour_mm` | Akumulasi dalam window 1 jam (dikonfigurasi lewat `set_rainfall_window(1)`) |
-| `tip_counter` | Jumlah tipping raw |
+| `rainfall_total_mm` |Cumulative counter since sensor power-on (never auto reset)|
+| `rainfall_last_hour_mm` |Accumulation in 1 hour window (configured via `set_rainfall_window(1)`)|
+| `tip_counter` |Raw tipping amount|
 | `working_time_hours` | Uptime sensor |
 
-**Yang dikirim ke API (`payload.telemetry[].rainfall`):**
-Delta kumulatif sejak pengiriman telemetry *sebelumnya* (`_rainfall_delta()` di `main.py`),
-bukan window 1 jam — agar sesuai dengan interval kirim aktual (30 menit normal / 10 menit emergency).
+**What was sent to API (`payload.telemetry[].rainfall`):**
+Cumulative delta since *previous* telemetry sending (`_rainfall_delta()` at `main.py`),
+not a 1 hour window — to match the actual send interval (30 minutes normal / 10 minutes emergency).
 
-**Yang dipakai untuk evaluasi alarm threshold:**
-`rainfall_last_hour_mm` (window 1 jam dari sensor) — karena evaluasi alarm jalan tiap siklus
-sampling (3 menit), bukan tiap pengiriman telemetry.
+**What is used to evaluate the alarm threshold:**
+`rainfall_last_hour_mm` (1 hour window from sensor) — due to evaluation of the running alarm every cycle
+sampling (3 minutes), not every telemetry transmission.
 
 ---
 
 ## 9. Submersible Pressure Sensor — Water Level
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Prinsip | Tekanan hidrostatis → arus 4–20 mA |
-| Rentang kedalaman | 0–3 m |
+| Prinsip |Hydrostatic pressure → current 4–20 mA|
+|Depth range| 0–3 m |
 | Output | 4–20 mA (current loop) |
-| Catu daya | 12 V DC |
-| Interface ke Pi | Burden resistor 100 Ω → tegangan 1–5 V → MCP3008 CH4 |
+|Power supplies| 12 V DC |
+|Interface to Pi|Burden resistor 100 Ω → voltage 1–5 V → MCP3008 CH4|
 | Driver | `sensors/pressure.py` |
 | Setting | `PRESSURE_BURDEN_OHM=100`, `PRESSURE_RANGE_M=3.0` |
 
-**Konversi arus ke kedalaman:**
+**Current to depth conversion:**
 ```
 V_burden = current_ma × R_burden / 1000
 pct      = (current_ma − 4.0) / 16.0          # 4 mA = 0%, 20 mA = 100%
@@ -201,60 +201,60 @@ depth_m  = pct × PRESSURE_RANGE_M
 pressure_bar = depth_m × 0.0980665
 ```
 
-**Fault detection:** `fault_open_loop=True` jika tegangan burden mendekati 0 V
-(kabel putus atau sensor tidak terendam / tidak bertekanan).
+**Fault detection:** `fault_open_loop=True` if the burden voltage is close to 0 V
+(cable broken or sensor not submerged / not pressurized).
 
-> **Catatan wiring:** Sensor ini **tidak** melalui LLC. Output burden resistor sudah
-> dalam rentang 1–5 V, masih sedikit di atas VREF MCP3008 (3.3 V) pada current > 16.8 mA —
-> perhatikan bahwa pembacaan akan saturasi di atas ~2.7 m jika VREF = 3.3 V.
-> Jika rentang penuh 3 m dibutuhkan, pastikan VREF di-set ke 5 V atau gunakan burden
-> 165 Ω agar 20 mA → 3.3 V persis.
+> **Wiring note:** This sensor **doesn't** go through LLC. Output burden resistor already
+> in the 1–5 V range, still slightly above VREF MCP3008 (3.3 V) at current > 16.8 mA —
+> note that the reading will saturate above ~2.7 m if VREF = 3.3 V.
+> If the full range of 3 m is required, make sure the VREF is set to 5 V or use a load
+> 165 Ω for 20 mA → 3.3 V exactly.
 
 ---
 
-## 10. RS485 Anemometer — Kecepatan Angin
+## 10. RS485 Anemometer — Wind Speed
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Protokol | RS485 Modbus RTU |
-| Catu daya | 12 V DC |
+|Power supplies| 12 V DC |
 | Slave ID default | `2` (`EFWS_ANEM_SLAVE`) |
 | Baudrate | 9600 bps (`EFWS_ANEM_BAUD`) |
-| Register kecepatan | `0x0000` (`EFWS_ANEM_REGISTER`) |
-| Desimal | 1 digit (`EFWS_ANEM_DECIMALS`) — nilai raw dibagi 10 |
-| Interface ke Pi | Industrial USB-to-RS485 converter → `/dev/ttyUSB0` |
+| Speed register | `0x0000` (`EFWS_ANEM_REGISTER`) |
+| Desimal |1 digit (`EFWS_ANEM_DECIMALS`) — raw value divided by 10|
+|Interface to Pi| Industrial USB-to-RS485 converter → `/dev/ttyUSB0` |
 | Driver | `sensors/anemometer.py` (`minimalmodbus`) |
 
-**Proteksi scan port:** `scan_ports()` di `sim_detector.py` mengecualikan
-`ANEMOMETER_PORT` dari kandidat scan modem 4G, karena mengirim `AT` ke port Modbus
-akan merusak frame RTU yang sedang berjalan.
+**Port scan protection:** `scan_ports()` in `sim_detector.py` exclude
+`ANEMOMETER_PORT` of the 4G modem scan candidate, as it sends `AT` to the Modbus port
+will damage the running RTU frame.
 
 ---
 
 ## 11. Industrial USB to RS485 Converter
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Konversi | USB ↔ RS485 |
-| Protokol | Mendukung Modbus RTU |
+| Protocol | Supports Modbus RTU |
 | Proteksi | ESD, isolasi galvanik |
-| Port di Pi | `/dev/ttyUSB0` (default, bisa beda tergantung urutan enumerate USB) |
+|Ports on the Pi|`/dev/ttyUSB0` (default, can be different depending on the enumeration order USB)|
 
 ---
 
 ## 12. Wind Direction Sensor — JL-FSX2
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Prinsip | Hall Effect (sensor A3144) + 1 magnet per posisi |
-| Arah terdeteksi | 8 arah (N, NE, E, SE, S, SW, W, NW) |
-| Tegangan kerja | 5 V DC |
+|Direction detected|8 directions (N, NE, E, SE, S, SW, W, NW)|
+|Working voltage| 5 V DC |
 | Interface | UART TTL (RX/TX) |
 | Baudrate | 9600 bps (`EFWS_WIND_DIR_BAUD`) |
-| Port di Pi | `/dev/serial0` (GPIO14/GPIO15) — `EFWS_WIND_DIR_PORT` |
+|Ports on the Pi| `/dev/serial0` (GPIO14/GPIO15) — `EFWS_WIND_DIR_PORT` |
 | Protokol frame | `*<kode>#` → kode 1–8 |
-| Material housing | PLA+ (indoor/prototype) atau ASA (outdoor, tahan UV) |
-| Panjang kabel | ±40 cm |
+| Material housing |PLA+ (indoor/prototype) or ASA (outdoor, UV resistant)|
+|Cable length| ±40 cm |
 | Driver | `sensors/wind_direction.py` |
 
 **Wiring UART:**
@@ -265,118 +265,118 @@ Sensor TX   (kuning) → GPIO14 (Pin 8, RXD Pi)
 Sensor RX   (hijau)  → GPIO15 (Pin 10, TXD Pi)
 ```
 
-**Prasyarat RPi wajib** (lihat detail di `docs/Pinout.md`):
-- `dtoverlay=disable-bt` di `/boot/config.txt` → memindahkan PL011 UART ke GPIO14/15
-- Console serial login dimatikan via `raspi-config`
-- Tanpa keduanya: baudrate drift / data acak akibat mini-UART clock ikut VPU
+**Mandatory RPi prerequisites** (see details in `docs/Pinout.md`):
+- `dtoverlay=disable-bt` in `/boot/config.txt` → move PL011 UART to GPIO14/15
+- Console serial login is disabled via `raspi-config`
+- Without both: baudrate drift / random data due to mini-UART clock following VPU
 
 ---
 
 ## 13. Voltage Sensor Module — DC 0–25 V (Battery Monitor)
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Rentang input | 0–25 V (hardware), aman hingga **16.5 V** saat VREF 3.3 V |
-| Prinsip | Voltage divider internal rasio 1:5 (TETAP) |
-| Output "S" | 0–3.3 V (native, tidak perlu LLC) |
-| Tegangan supply sisi logic | 3.3 V Pi |
+|Input range|0–25 V (hardware), safe up to **16.5 V** when VREF 3.3 V|
+| Principle | Internal fixed 1:5 voltage divider |
+| Output "S" |0–3.3 V (native, no need LLC)|
+|Logic side supply voltage| 3.3 V Pi |
 | Channel ADC | MCP3008 CH5 (`ADC_CHANNEL_BATTERY`) |
 | Driver | `sensors/battery.py` |
 | Setting | `BATTERY_SENSOR_MAX_V = 16.5 V` (= 3.3 V × 5) |
 
-**Kalkulasi tegangan baterai:**
+**Battery voltage calculation:**
 ```
 V_battery = (raw_ADC / 1023) × 16.5
 ```
 
-> **Batas aman input:** 16.5 V (= VREF 3.3 V × rasio 5). Nilai "25 V" yang tercetak
-> di modul berlaku jika ADC-nya diberi VREF 5 V — bukan kasus project ini.
-> Baterai LiFePO4 max 14.4 V masih dalam batas aman (headroom ~2.1 V).
+> **Input safe limit:** 16.5 V (= VREF 3.3 V × ratio 5). The value "25 V" is printed
+> in the module applies if the ADC is assigned VREF 5 V — not the case for this project.
+> LiFePO4 battery max 14.4 V is still within safe limits (headroom ~2.1 V).
 
 ---
 
 ## 14. IR Flame Sensor
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Prinsip | IR photodiode — mendeteksi radiasi IR dari api (750–1100 nm) |
-| Output dipakai | AO (analog) → MCP3008 CH6 (langsung, native 3.3 V, tanpa LLC) |
-| Output tidak dipakai | DO (digital, tidak dikabel) |
-| Tegangan output | Turun saat ada api (default `trigger_below=True`) |
-| Threshold deteksi | `FLAME_AO_THRESHOLD_V = 1.65 V` (**PERKIRAAN AWAL, wajib dikalibrasi!**) |
+| Prinsip |IR photodiode — detects IR radiation from flames (750–1100 nm)|
+|Output is used|AO (analog) → MCP3008 CH6 (direct, native 3.3 V, without LLC)|
+|Output is not used|DO (digital, not wired)|
+|Output voltage|Down when there is fire (default `trigger_below=True`)|
+| Threshold deteksi |`FLAME_AO_THRESHOLD_V = 1.65 V` (**PRIGINAL ESTIMATE, calibration required!**)|
 | Driver | `sensors/flame.py` |
 
 **Prosedur kalibrasi lapangan:**
-1. `python sensors/flame.py` → catat nilai AO saat kondisi normal (tidak ada api)
-2. Dekatkan api kecil (korek api / lilin, jarak aman) → catat nilai AO saat ada api
-3. Set `EFWS_FLAME_AO_THRESHOLD_V` di `.env` ke nilai di antara keduanya
-4. Jika AO **naik** saat ada api (modul tertentu berbeda polaritas): set `trigger_below=False`
+1. `python sensors/flame.py` → record the AO value under normal conditions (no fire)
+2. Bring a small flame (match / candle, safe distance) → record the AO value when there is a fire
+3. Set `EFWS_FLAME_AO_THRESHOLD_V` in `.env` to a value between the two
+4. If AO **rises** when there is fire (certain modules have different polarity): set `trigger_below=False`
 
 ---
 
 ## 15. Relay Module — 5 V 1-Channel
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Tegangan kontrol | 5 V (sinyal GPIO Pi melalui transistor driver onboard) |
-| GPIO kontrol | GPIO27 (Pin 13) — `EFWS_GPIO_RELAY` |
+|Control voltage|5 V (GPIO Pi signal via onboard driver transistor)|
+|GPIO control| GPIO27 (Pin 13) — `EFWS_GPIO_RELAY` |
 | Kontak | NO (Normally Open) / NC (Normally Closed) / COM |
-| Kapasitas kontak | 10 A / 250 VAC atau 10 A / 30 VDC |
+| Kapasitas kontak |10 A / 250 VAC or 10 A / 30 VDC|
 | Beban | Siren 12 V (~1 A) |
 | Driver | `alarm/relay.py`, `alarm/siren.py` |
 
-**Logika pulsing alarm (dari `alarm/siren.py`):**
+**Pulsing alarm logic (from `alarm/siren.py`):**
 
-| Level | Perilaku Relay |
+| Level | Relay behavior |
 |-------|---------------|
 | `none` | OFF |
 | `warning` | Pulse: ON 0.4 s / OFF 1.6 s (background thread) |
-| `critical` | ON terus-menerus |
+| `critical` |ON continuously|
 
 ---
 
 ## 16. Siren 12 V
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
-| Tegangan kerja | 12 V DC |
-| Konsumsi daya | ~15–20 W |
-| Konsumsi arus | ~600–1200 mA (~1 A tipikal) |
+|Working voltage| 12 V DC |
+|Power consumption| ~15–20 W |
+|Current consumption| ~600–1200 mA (~1 A tipikal) |
 | Intensitas suara | ±120 dB |
-| Kontrol | Via Relay Module (GPIO27) |
+|Control| Via Relay Module (GPIO27) |
 
-> Siren dicatu langsung dari **bus baterai 12 V** (bukan dari buck converter 5 V),
-> dikontrol relay. Konsumsi ~1 A tidak boleh dialirkan lewat GPIO Pi secara langsung
-> (batas GPIO Pi ~16 mA per pin).
+> The siren is supplied directly from the **12 V battery bus** (not from the 5 V buck converter),
+> relay controlled. The ~1 A consumption should not be fed through the GPIO Pi directly
+> (GPIO Pi limits ~16 mA per pin).
 
 ---
 
 ## 17. SIMCom A7670E — 4G LTE Modem
 
-| Parameter | Nilai |
+| Parameter |Mark|
 |-----------|-------|
 | Standar | LTE Cat-1 |
 | Fallback | GSM / GPRS |
-| GNSS | Tersedia (tergantung varian — konfirmasi dengan label hardware) |
+| GNSS |Available (depending on variant — confirm with hardware label)|
 | Interface | UART (AT Command), USB |
-| Tegangan kerja | 3.4–4.2 V (regulasi internal modul / HAT) |
+|Working voltage|3.4–4.2 V (module internal regulation / HAT)|
 | Port AT | `/dev/ttyUSB2` (default `EFWS_SIM_PORT`, auto-detect via `sim_detector.py`) |
 | Baudrate | 115200 bps (`EFWS_A7670E_BAUD`) |
 | Driver | `communication/a7670e.py` |
 
-**Command set yang dipakai EFWS:**
+**Command set used EFWS:**
 
-| Fungsi | AT Command |
+|Function| AT Command |
 |--------|-----------|
-| Cek modul | `AT` |
-| Identifikasi | `ATI` (untuk auto-detect di `sim_detector.py`) |
+|Check the module| `AT` |
+| Identifikasi |`ATI` (for auto-detect on `sim_detector.py`)|
 | Signal quality | `AT+CSQ` |
 | Network registration | `AT+CREG?` |
 | Set APN | `AT+CGDCONT=1,"IP","<APN>"` |
-| Nyalakan GNSS | `AT+CGNSSPWR=1` |
-| Baca posisi GPS | `AT+CGPSINFO` |
-| Matikan GNSS | `AT+CGNSSPWR=0` |
+|Turn on GNSS| `AT+CGNSSPWR=1` |
+|Read position GPS| `AT+CGPSINFO` |
+|Turn off GNSS| `AT+CGNSSPWR=0` |
 
-> **Catatan kompatibilitas SIM7600:** Jika dipakai SIM7600 (legacy), command GNSS berbeda:
-> `AT+CGPS=1` / `AT+CGPS=0`. Penanganannya otomatis lewat `communication/sim7600_legacy.py`
-> + `sim_detector.py` (auto-detect berdasarkan respons `ATI`).
+> **SIM7600 compatibility note:** If SIM7600 (legacy) is used, the GNSS command is different:
+> `AT+CGPS=1` / `AT+CGPS=0`. Handling is automatic via `communication/sim7600_legacy.py`
+> + `sim_detector.py` (auto-detect based on response `ATI`).

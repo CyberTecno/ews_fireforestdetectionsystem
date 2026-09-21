@@ -34,6 +34,6 @@ while True:
         except:
             pass
 
-    print("\nPutar baling-baling selama scan...\n")
+    print("\nRotate propeller during scan...\n")
 
     time.sleep(2)

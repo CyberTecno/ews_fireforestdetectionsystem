@@ -40,7 +40,7 @@ See `docs/Pinout.md` for full wiring reference.
 ```text
 efws/
 ├── sensors/        # sensor drivers + mock_sensors.py for testing without hardware
-├── communication/  # SIM auto-detect, REST API publisher (offline queue)
+├── communication/ # SIM auto-detect, REST API publisher (offline queue)
 ├── database/       # SQLite local logger + offline queue
 ├── alarm/          # relay/siren controller
 ├── config/         # settings.py + thresholds.json (local siren triggering only)

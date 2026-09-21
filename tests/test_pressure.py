@@ -1,17 +1,17 @@
 """
-TEST — Submersible Pressure Sensor (ketinggian air, loop 4-20mA via burden resistor)
+TEST — Submersible Pressure Sensor (water level, 4-20mA loop via burden resistor)
 
-Cek dulu sebelum run:
-  ls /dev/spidev*  → harus ada /dev/spidev0.0
-  R_BURDEN 100Ω terpasang di loop, tap-nya LANGSUNG ke MCP3008 CH4 (TANPA
-  LLC -- tegangan burden 0.4-2.0V sudah otomatis dalam rentang aman ADC)
-  PSU loop 12-24V sudah menyala (sensor ini loop-powered, BUKAN dari Pi/buck 5V)
+Check first before running:
+ls /dev/spidev* → there must be /dev/spidev0.0
+R_BURDEN 100Ω is installed in the loop, the tap is DIRECTLY to MCP3008 CH4 (WITHOUT
+LLC -- burden voltage 0.4-2.0V is automatically within the safe range ADC)
+PSU loop 12-24V is already on (this sensor is loop-powered, NOT from Pi/buck 5V)
 
-Yang dicek:
-  1. Sensor bisa dibaca tanpa exception.
-  2. current_ma ada di rentang wajar 4-20mA (di luar itu = sinyal aneh/loop bermasalah).
-  3. fault_open_loop tidak menyala terus-menerus (kalau iya → loop kemungkinan putus).
-  4. depth_m masuk akal (0 sampai PRESSURE_RANGE_M).
+What to check:
+1. Sensors can be read without exception.
+2. current_ma is in the reasonable range of 4-20mA (beyond that = strange signal /loop is problematic).
+3. fault_open_loop is not on continuously (if it is → the loop is probably broken).
+4. reasonable depth_m (0 to PRESSURE_RANGE_M).
 
 Usage: python3 tests/test_pressure.py
 """
@@ -25,21 +25,21 @@ print("=" * 60)
 print("  TEST — Submersible Pressure Sensor (MCP3008 CH4)")
 print("=" * 60)
 print(f"R_BURDEN    : {settings.PRESSURE_BURDEN_OHM}Ω")
-print(f"Rentang mA  : {settings.PRESSURE_MIN_MA}-{settings.PRESSURE_MAX_MA}mA")
-print(f"Range depth : 0-{settings.PRESSURE_RANGE_M}m  (sesuaikan EFWS_PRESSURE_RANGE_M kalau beda datasheet)\n")
+print(f"mA range:{settings.PRESSURE_MIN_MA}-{settings.PRESSURE_MAX_MA}mA")
+print(f"Range depth : 0-{settings.PRESSURE_RANGE_M}m (adjust EFWS_PRESSURE_RANGE_M if datasheet is different)\n")
 
 try:
     sensor = PressureWaterSensor()
 except Exception as e:
-    print(f"❌ Gagal inisialisasi: {e}")
-    print("Cek: ls /dev/spidev* harus menunjukkan /dev/spidev0.0")
+    print(f"❌ Initialization failed:{e}")
+    print("Check: ls /dev/spidev* should show /dev/spidev0.0")
     sys.exit(1)
 
 N = 5
 fault_count = 0
 readings = []
 
-print(f"Membaca {N}x, tiap 2 detik (Ctrl+C untuk stop lebih awal)...\n")
+print(f"Read{N}x, every 2 seconds (Ctrl+C to stop early)...\n")
 try:
     for i in range(N):
         r = sensor.read()
@@ -51,11 +51,11 @@ try:
               f"pressure={r['pressure_bar']}bar{flag}")
         time.sleep(2)
 except KeyboardInterrupt:
-    print("\nDihentikan oleh user.")
+    print("\nStopped by user.")
     sys.exit(0)
 
 print("\n" + "=" * 60)
-print("  RINGKASAN")
+print("SUMMARY")
 print("=" * 60)
 
 problems = []
@@ -63,29 +63,29 @@ problems = []
 ma_values = [r["current_ma"] for r in readings]
 out_of_range = [ma for ma in ma_values if ma < 3.5 or ma > 21.0]
 if out_of_range:
-    problems.append(f"Ada pembacaan current_ma di luar rentang wajar 4-20mA: {out_of_range}")
+    problems.append(f"There is a current_ma reading outside the reasonable range of 4-20mA:{out_of_range}")
 else:
-    print(f"  ✅ current_ma semua di rentang wajar ({min(ma_values)}-{max(ma_values)}mA)")
+    print(f"✅ current_ma are all in a reasonable range ({min(ma_values)}-{max(ma_values)}mA)")
 
 if fault_count == N:
-    problems.append("fault_open_loop menyala di SEMUA pembacaan — loop kemungkinan putus/belum tersambung")
+    problems.append("fault_open_loop occurs on ALL readings — the loop may be broken/not connected")
 elif fault_count > 0:
-    print(f"  ⚠️  fault_open_loop menyala {fault_count}/{N}x — cek sambungan loop kalau ini tidak diharapkan")
+    print(f"  ⚠️  fault_open_loop occurred {fault_count}/{N} times — check the loop connection if this is unexpected")
 else:
-    print("  ✅ Tidak ada fault_open_loop selama test")
+    print("✅ No fault_open_loop during test")
 
 depth_values = [r["depth_m"] for r in readings]
 if any(d < 0 or d > settings.PRESSURE_RANGE_M for d in depth_values):
-    problems.append(f"Ada depth_m di luar rentang 0-{settings.PRESSURE_RANGE_M}m")
+    problems.append(f"There is a depth_m outside the range 0-{settings.PRESSURE_RANGE_M}m")
 else:
-    print(f"  ✅ depth_m semua di rentang 0-{settings.PRESSURE_RANGE_M}m ({min(depth_values)}-{max(depth_values)}m)")
+    print(f"✅ depth_m all in the range 0-{settings.PRESSURE_RANGE_M}m ({min(depth_values)}-{max(depth_values)}m)")
 
 print()
 if problems:
-    print("❌ Ada yang perlu dicek:")
+    print("❌ Something to check:")
     for p in problems:
         print(f"   - {p}")
-    print("\nLihat docs/Pinout.md bagian 'Submersible Pressure Sensor' untuk detail wiring.")
+    print("\nSee docs/Pinout.md section 'Submersible Pressure Sensor' for wiring details.")
     sys.exit(1)
 else:
-    print("✅ Submersible pressure sensor terbaca dengan baik.")
+    print("✅ Submersible pressure sensor reads well.")

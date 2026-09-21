@@ -10,7 +10,7 @@ Group=root
 
 ExecStart=/home/uwfadmin/ews/scripts/gps_refresh.sh
 
-# Baca EFWS_SIM_PORT dan EFWS_GPS_CACHE dari .env jika ada
+# Read EFWS_SIM_PORT and EFWS_GPS_CACHE from .env if present
 EnvironmentFile=-/home/uwfadmin/ews/.env
 
 StandardOutput=journal

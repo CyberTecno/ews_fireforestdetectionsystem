@@ -6,9 +6,9 @@ from config import settings
 
 
 class AnemometerSensor:
-    # Mengubah default paramater ke nilai yang SUDAH TERBUKTI BERHASIL
+    # Changing the default parameters to the values ​​HAS BEEN PROVEN WORKING
     # (Port USB0, Slave ID 2, Baudrate 9600).
-    # Jika di file config/settings.py Anda parameternya berbeda, kita amankan di sini.
+    # If in your config/settings.py file the parameters are different, we secure them here.
     def __init__(self):
         # Inisialisasi Modbus
         self.instrument = minimalmodbus.Instrument(
@@ -25,7 +25,7 @@ class AnemometerSensor:
         self.instrument.mode = minimalmodbus.MODE_RTU
 
     def read_wind_speed(self):
-        # MENGGUNAKAN PENGATURAN REGISTER YANG BERHASIL: 
+        # USING SUCCESSFUL REGISTER SETTINGS:
         return self.instrument.read_register(
             settings.ANEMOMETER_REGISTER,
             number_of_decimals=settings.ANEMOMETER_DECIMALS,
@@ -35,14 +35,14 @@ class AnemometerSensor:
     def read(self):
 
         try:
-            # Mengambil data dari sensor
+            # Retrieves data from sensors
             speed = self.read_wind_speed()
             return {
                 "speed_ms": speed
             }
 
         except minimalmodbus.NoResponseError:
-            # Penanganan khusus jika sensor mati / kabel terputus
+            # Special handling if the sensor dies / cable is disconnected
             return {
                 "speed_ms": None,
                 "error": "No response from sensor"
@@ -55,7 +55,7 @@ class AnemometerSensor:
                 "error":str(e)
             }
 
-# Blok untuk pengetesan langsung di dalam folder sensors
+# Blocks for testing directly in the sensors folder
 if __name__ == "__main__":
     sensor = AnemometerSensor()
 

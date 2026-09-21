@@ -1,27 +1,27 @@
 """
-Driver MCP3008 (ADC 8-channel, 10-bit, via SPI) — menggantikan ADS1115.
+MCP3008 driver (8-channel, 10-bit ADC over SPI) — replaces the ADS1115.
 
-MCP3008 dipakai karena Pi 4 tidak punya pin analog. Semua sensor analog
+MCP3008 is used because the Pi 4 doesn't have an analog pin. All analog sensors
 (MQ-2, MQ-135, soil moisture x2, pressure sensor, battery voltage sensor)
-terhubung ke satu chip MCP3008 yang sama, dibaca lewat SPI hardware (SPI0, CE0).
+connected to the same MCP3008 chip, read via SPI hardware (SPI0, CE0).
 
-PENTING soal tegangan:
-  - MCP3008 VDD/VREF harus 3.3V (BUKAN 5V) karena terhubung langsung ke
-    Pi tanpa level shifter di sisi SPI.
-  - Tapi MQ-2/MQ-135/soil probe/battery sensor outputnya 0-5V → SETIAP
-    channel analog MCP3008 yang menerima sinyal dari sensor 5V WAJIB
-    melewati logic level converter (sisi HV=5V ke sensor, sisi LV=3.3V ke
-    MCP3008), kalau tidak pembacaan akan clipping/jenuh di ~3.3V dan bisa
-    merusak chip dalam jangka panjang.
+IMPORTANT about voltage:
+- MCP3008 VDD/VREF must be 3.3V (NOT 5V) because it is connected directly to
+Pi without level shifter on side SPI.
+- But MQ-2/MQ-135/soil probe/battery sensor output is 0-5V → EACH
+analog channel MCP3008 which receives signals from the 5V sensor MANDATORY
+passes through the logic level converter (HV side=5V to sensor, LV side=3.3V to
+MCP3008), otherwise the reading will clip/jenuh at ~3.3V and can
+damage the chip in the long term.
 
-Pemetaan channel default (lihat docs/Pinout.md untuk detail wiring):
-  CH0 → MQ-2 (lewat LLC)
-  CH1 → MQ-135 (lewat LLC)
-  CH2 → Soil moisture — surface (lewat LLC)
-  CH3 → Soil moisture — deep (lewat LLC)
-  CH4 → Submersible pressure sensor, via burden resistor (lewat LLC)
-  CH5 → Battery voltage sensor module (lewat LLC)
-  CH6-CH7 → cadangan/ekspansi
+Default channel mapping (see docs/Pinout.md for wiring details):
+CH0 → MQ-2 (via LLC)
+CH1 → MQ-135 (via LLC)
+CH2 → Soil moisture — surface (via LLC)
+CH3 → Soil moisture — deep (via LLC)
+CH4 → Submersible pressure sensor, via burden resistor (via LLC)
+CH5 → Battery voltage sensor module (via LLC)
+CH6-CH7 → backup/ekspansi
 
 Requires: pip install spidev
 """
@@ -37,11 +37,11 @@ except ImportError:
 
 
 class MCP3008:
-    """Satu instance merepresentasikan satu chip MCP3008 fisik di SPI0/CE0."""
+    """One instance represents one physical MCP3008 chip in SPI0/CE0."""
 
     def __init__(self, bus=None, device=None, max_speed_hz=None, vref=None):
         if spidev is None:
-            raise RuntimeError("spidev tidak terinstall - pip install spidev")
+            raise RuntimeError("spidev not installed - pip install spidev")
 
         self.bus = bus if bus is not None else settings.SPI_BUS
         self.device = device if device is not None else settings.SPI_DEVICE
@@ -53,9 +53,9 @@ class MCP3008:
         self.spi.mode = 0b00
 
     def read_raw(self, channel: int) -> int:
-        """Baca channel 0-7, return nilai mentah 0-1023 (10-bit)."""
+        """Read channels 0-7, return raw value 0-1023 (10-bit)."""
         if not 0 <= channel <= 7:
-            raise ValueError("MCP3008 channel harus 0-7")
+            raise ValueError("MCP3008 channel should be 0-7")
         cmd = [1, (8 + channel) << 4, 0]
         resp = self.spi.xfer2(cmd)
         value = ((resp[1] & 3) << 8) + resp[2]
@@ -70,9 +70,9 @@ class MCP3008:
 
 
 # ─── Singleton helper ──────────────────────────────────────────────
-# Semua sensor analog berbagi SATU chip MCP3008 fisik yang sama, jadi
-# semua sensor sebaiknya pakai instance SPI yang sama, bukan masing-
-# masing buka koneksi SPI sendiri-sendiri.
+# All analog sensors share the same physical SATU chip MCP3008, so
+# all sensors should use the same instance of SPI, not each
+# each open connection SPI individually.
 _instance = None
 
 
@@ -86,8 +86,8 @@ def get_mcp3008() -> "MCP3008":
 if __name__ == "__main__":
     import time
     adc = MCP3008()
-    print(f"MCP3008 dibuka di SPI bus={adc.bus} device={adc.device}, VREF={adc.vref}V")
-    print("Membaca semua 8 channel tiap 1 detik (Ctrl+C untuk stop)...\n")
+    print(f"MCP3008 opens at SPI bus={adc.bus} device={adc.device}, VREF={adc.vref}V")
+    print("Reads all 8 channels every 1 second (Ctrl+C to stop)...\n")
     try:
         while True:
             readings = [f"CH{c}={adc.read_voltage(c):.3f}V" for c in range(8)]

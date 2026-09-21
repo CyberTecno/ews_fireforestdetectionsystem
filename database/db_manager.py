@@ -1,19 +1,19 @@
 """
-SQLite local data logger untuk EFWS.
+SQLite local data logger for EFWS.
 
 Prinsip alur data:
-  baca sensor → SIMPAN ke DB dulu (sensor_readings, sumber kebenaran lokal)
-              → coba kirim ke API
-              → gagal (sinyal mati)? → masuk antrian (api_queue), payload
-                disimpan APA ADANYA (JSON persis) supaya waktu di-flush
-                ulang nanti datanya tidak berubah sedikit pun
-              → EFWSPublisher cek sinyal ulang tiap EFWS_CONNECTIVITY_CHECK_SEC
-                (default 2 menit) lalu auto flush kalau sudah online lagi.
+read sensors → SAVE to DB first (sensor_readings, local source of truth)
+→ try sending to API
+→ failed (signal off)? → enter queue (api_queue), payload
+saved AS IS (JSON exactly) so that when it is flushed
+If you repeat later, the data will not change in the slightest
+→ EFWSPublisher checks the signal again every EFWS_CONNECTIVITY_CHECK_SEC
+(default 2 minutes) then auto flush when it's online again.
 
-TIDAK menyimpan alarm_level / triggered_by / threshold apa pun — evaluasi
-alarm & threshold sekarang murni tanggung jawab backend. Device cuma
-mengevaluasi status secara LOKAL (main.py) untuk menyalakan sirine secara
-real-time, tanpa mempersistensikannya di sini.
+NOT stores any alarm_level / triggered_by / threshold — evaluate
+alarm & threshold are now purely the backend's responsibility. Device only
+Evaluate the status LOCAL (main.py) to activate the siren automatically
+real-time, without persisting it here.
 """
 import sqlite3
 import json
@@ -33,8 +33,8 @@ class DBManager:
     def _init_tables(self):
         cur = self.conn.cursor()
 
-        # Tabel utama: satu baris per siklus baca, kolom per sensor mentah.
-        # Tidak ada kolom status/alarm/threshold — itu urusan backend.
+        # Main table: one row per read cycle, column per raw sensor.
+        # There's no status column/alarm/threshold — that's a backend thing.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS sensor_readings (
                 id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,12 +58,12 @@ class DBManager:
                 battery_voltage   REAL,
                 battery_pct       REAL,
                 flame_detected    INTEGER,
-                rainfall_delta_mm REAL,   -- mm sejak telemetry SEBELUMNYA (bukan window 1 jam)
-                full_payload      TEXT    -- JSON PERSIS yang dikirim ke API (untuk audit)
+rainfall_delta_mm REAL, -- mm since PREVIOUS telemetry (not a 1 hour window)
+full_payload TEXT -- JSON EXACTLY sent to API (for audit)
             )
         """)
 
-        # Antrian pengiriman API yang gagal (offline buffer)
+        # Failed send queue API (offline buffer)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS api_queue (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,10 +76,10 @@ class DBManager:
             )
         """)
 
-        # Log setiap kali Location Publisher MENCOBA kirim (bukan cuma yang
-        # sukses -- kalau gagal & masuk api_queue, baris ini tetap ada,
-        # supaya riwayat "device pernah lapor posisi X pada waktu Y" tidak
-        # hilang, terpisah dari mekanisme retry queue).
+        # Log every time Location Publisher TRY sends (not just the ones
+        # success -- if it fails & enters api_queue, this line remains,
+        # so that the history of "the device once reported position X at time Y" does not
+        # missing, apart from the retry queue mechanism).
         cur.execute("""
             CREATE TABLE IF NOT EXISTS location_log (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,9 +87,9 @@ class DBManager:
                 device_id   TEXT    NOT NULL,
                 latitude    REAL,
                 longitude   REAL,
-                source      TEXT,     -- "gps" atau "config" (fallback)
-                fix         INTEGER,  -- 1 kalau GPS benar-benar fix, 0 kalau fallback
-                full_payload TEXT     -- JSON PERSIS yang dikirim ke API (untuk audit)
+source TEXT, -- "gps" or "config" (fallback)
+fix INTEGER, -- 1 if GPS is completely fixed, 0 if fallback
+full_payload TEXT -- JSON EXACTLY sent to API (for audit)
             )
         """)
 
@@ -102,17 +102,17 @@ class DBManager:
     # ─── Logging sensor readings ──────────────────────────────────
     def log_reading(self, data: dict, api_payload: dict) -> int:
         """
-        Simpan satu siklus baca ke database SEBELUM dicoba dikirim ke API.
-        - data:        dict hasil EFWS._read_all() → {"mq2":{...}, "mq135":{...},
+Save one read cycle to database BEFORE attempting send to API.
+- data: result dict EFWS._read_all() → {"mq2":{...}, "mq135":{...},
                        "bme280":{...}, "soil":{"surface":{...},"deep":{...}},
                        "wind":{...}, "pressure":{...}, "battery":{...}}
-        - api_payload: payload PERSIS yang akan dikirim ke API, disimpan utuh
-                       di kolom full_payload untuk audit/pembanding dengan isi
-                       antrian offline. Kolom rainfall_delta_mm diambil dari
-                       SINI (bukan dihitung ulang dari data mentah), supaya
-                       nilainya PERSIS sama dengan yang benar-benar dikirim
-                       (main.py EFWS._rainfall_delta() adalah sumber kebenaran
-                       satu-satunya untuk nilai delta ini).
+- api_payload: EXACT payload to be sent to API, kept intact
+in the full_payload column for auditing/comparison with the contents
+offline queue. The rainfall_delta_mm column is taken from
+SINI (not recalculated from raw data), so
+the value is EXACTLY the same as the one actually sent
+(main.py EFWS._rainfall_delta() is the source of truth
+the only one for this delta value).
         Return: row id.
         """
         mq2      = data.get("mq2", {})
@@ -168,12 +168,12 @@ class DBManager:
     # ─── Logging location (Location Publisher) ────────────────────
     def log_location(self, location: dict, api_payload: dict) -> int:
         """
-        Simpan setiap kali Location Publisher MENCOBA kirim -- terlepas dari
-        sukses/gagalnya pengiriman (kalau gagal, tetap tercatat di sini DAN
-        masuk api_queue lewat mekanisme retry terpisah).
+Save every time Location Publisher TRY sends -- regardless
+whether delivery succeeds or fails (if it fails, it is still recorded here AND
+enter api_queue via a separate retry mechanism).
         - location:    dict {"lat", "lon", "source", "fix"} (self._location
-                       milik EFWS di main.py).
-        - api_payload: payload PERSIS yang dikirim ke API (untuk audit).
+belongs to EFWS in main.py).
+- api_payload: EXACT payload sent to API (for auditing).
         Return: row id.
         """
         cur = self.conn.cursor()
@@ -195,7 +195,7 @@ class DBManager:
 
     # ─── API queue (offline buffer) ───────────────────────────────
     def queue_api(self, endpoint: str, payload: dict):
-        """Simpan payload ke antrian offline APA ADANYA (tidak diubah/dihitung ulang)."""
+        """Save the payload to the offline queue AS IS (not changed/recalculated)."""
         cur = self.conn.cursor()
         cur.execute("""
             INSERT INTO api_queue (timestamp, endpoint, payload)
@@ -208,7 +208,7 @@ class DBManager:
         self.conn.commit()
 
     def get_pending_queue(self, limit: int = 20) -> list:
-        """Ambil antrian yang belum terkirim (FIFO). Item gagal >10x dilewati (dianggap stale)."""
+        """Retrieve unsent queue (FIFO). Items that fail >10x are passed (considered stale)."""
         cur = self.conn.cursor()
         cur.execute("""
             SELECT id, endpoint, payload, attempts
@@ -254,19 +254,19 @@ class DBManager:
     # ─── Retensi data (auto-cleanup) ──────────────────────────────
     def purge_old_data(self, days: int = 3) -> dict:
         """
-        Hapus baris LAMA (lebih tua dari `days` hari) dari database lokal.
-        Dipanggil otomatis oleh background thread (main.py:
-        EFWS._retention_loop), bukan menghapus file database-nya sendiri --
-        cuma baris lama di dalamnya, supaya data terbaru (<= `days` hari)
-        tetap ada dan ukuran file tidak terus membengkak.
+Delete row OLD (older than `days` days) from the local database.
+Called automatically by the background thread (main.py:
+EFWS._retention_loop), instead of deleting the database file itself --
+only the old rows in it, so that the data is latest (<= `days` days)
+persists and the file size does not continue to swell.
 
-        - sensor_readings : semua baris lebih tua dari cutoff dihapus.
-        - api_queue        : HANYA baris yang statusnya sudah "selesai"
-                              (sent=1, atau attempts>=10 alias dianggap
-                              gagal permanen) yang dihapus. Item yang masih
-                              aktif menunggu retry TIDAK dihapus meskipun
-                              usianya lebih dari `days` hari, supaya tidak
-                              kehilangan data yang belum sempat terkirim.
+- sensor_readings : all rows older than cutoff are deleted.
+- api_queue : ONLY rows whose status is "completed"
+(sent=1, or attempts>=10 aka considered
+permanently failed) are removed. Items are still available
+actively waiting for retry NOT to be deleted though
+it's more than `days` days old, so don't
+Loss of data that has not been sent.
 
         Return: {"sensor_readings_deleted": int, "api_queue_deleted": int}
         """
@@ -287,7 +287,7 @@ class DBManager:
 
         self.conn.commit()
         if deleted_readings or deleted_queue or deleted_location:
-            self.conn.execute("VACUUM")  # kecilkan ukuran file .db setelah hapus
+            self.conn.execute("VACUUM")  # reduce size of .db file after delete
 
         return {
             "sensor_readings_deleted": deleted_readings,

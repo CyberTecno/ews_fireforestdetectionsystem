@@ -10,7 +10,7 @@ adc = MCP3008()
 
 print("=" * 70)
 print("LIVE MCP3008 MONITOR")
-print("Ctrl+C untuk keluar")
+print("Ctrl+C to exit")
 print("=" * 70)
 
 try:

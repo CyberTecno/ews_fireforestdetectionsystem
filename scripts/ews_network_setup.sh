@@ -4,30 +4,30 @@
 # EFWS — Network Setup (SIM7600 + GPS Fetch)
 #
 # Alur:
-#   1. Pastikan ModemManager & NetworkManager aktif
-#   2. Nyalakan radio WWAN, matikan PPP konflik
-#   3. Tunggu modem SIM7600 terdeteksi
-#   4. Auto-detect provider dari operator code → set APN
-#   5. Buat / update profil nmcli "EWS-4G"
-#   6. Set WiFi sebagai backup (metric lebih besar)
-#   7. Aktifkan koneksi EWS-4G
+#   1. Make sure ModemManager & NetworkManager are active
+#   2. Turn on radio WWAN, turn off conflict PPP
+#   3. Wait for the SIM7600 modem to be detected
+#   4. Auto-detect provider from operator code → set APN
+#   5. Create/update nmcli profile "EWS-4G"
+#   6. Set WiFi as backup (larger metric)
+#   7. Activate the EWS-4G connection
 #   8. Verifikasi IP & default route
-#   9. GPS fetch via AT+CGPS=1 + AT+CGPSINFO (3 percobaan)
-#      Hasil disimpan ke GPS_CACHE_FILE untuk dibaca main.py
+#   9. GPS fetch via AT+CGPS=1 + AT+CGPSINFO (3 attempts)
+#      Results are saved to GPS_CACHE_FILE for reading main.py
 #
 # GPS pre-panas (warm-up):
-#   Percobaan 1 — setelah 90 detik warm-up (cold start butuh waktu)
-#   Percobaan 2 — setelah +120 detik jika percobaan 1 gagal
-#   Percobaan 3 — setelah +120 detik jika percobaan 2 gagal
-#   Kalau semua gagal → tulis file dengan fix=false, main.py
-#   akan pakai koordinat fallback dari .env
+#   Trial 1 — after 90 seconds of warm-up (cold start takes time)
+#   Attempt 2 — after +120 seconds if attempt 1 fails
+#   Attempt 3 — after +120 seconds if attempt 2 fails
+#   If all else fails → write the file with fix=false, main.py
+#   will use fallback coordinates from .env
 #
-# Script selalu exit 0 → tidak pernah memblokir efws.service.
+# Script always exits 0 → never blocks efws.service.
 # ============================================================
 
 set -u
 
-# ── Konfigurasi ─────────────────────────────────────────────
+# ── Configuration ────────────────────── ───────────────────────
 CONNECTION_NAME="EWS-4G"
 MODEM_METRIC=50
 WIFI_METRIC=600
@@ -36,19 +36,19 @@ DEFAULT_APN="internet"
 # Port AT command SIM7600:
 #   ttyUSB0 = DM (diagnostic)
 #   ttyUSB1 = AT secondary / NMEA
-#   ttyUSB2 = AT command (dipakai script ini)
-#   ttyUSB3 = PPP/modem (jangan dipakai)
+#   ttyUSB2 = AT command (used by this script)
+#   ttyUSB3 = PPP/modem (do not use)
 SIM_AT_PORT="${EFWS_SIM_PORT:-/dev/ttyUSB2}"
 SIM_BAUD="${EFWS_SIM_BAUD:-115200}"
 
-# GPS: 3 percobaan dengan warm-up yang cukup
+# GPS: 3 attempts with sufficient warm-up
 GPS_ATTEMPTS=3
-GPS_WARMUP_FIRST=90      # detik warm-up sebelum percobaan 1 (cold start)
-GPS_POLL_INTERVAL=5      # detik antar pembacaan AT+CGPSINFO per percobaan
-GPS_POLL_TIMEOUT=60      # detik maks polling per percobaan (12x polling @ 5 detik)
-GPS_RETRY_WAIT=120       # detik tunggu antar percobaan jika gagal
+GPS_WARMUP_FIRST=90      # warm-up seconds before attempt 1 (cold start)
+GPS_POLL_INTERVAL=5      # seconds between AT+CGPSINFO reads per attempt
+GPS_POLL_TIMEOUT=60      # maximum polling seconds per attempt (12 polls at 5 seconds)
+GPS_RETRY_WAIT=120       # seconds to wait between failed attempts
 
-# Lokasi cache GPS — dibaca oleh main.py
+# Cache location GPS — read by main.py
 GPS_CACHE_FILE="${EFWS_GPS_CACHE:-/tmp/ews_gps_cache.json}"
 
 # Modem wait
@@ -71,7 +71,7 @@ log_gps() {
     echo "$msg" | tee -a "$LOG_FILE"
 }
 
-# ── Helper: ambil Modem ID ───────────────────────────────────
+# ── Helper: get Modem ID ───────────────────────────────────
 get_modem_id() {
     mmcli -L 2>/dev/null \
         | grep -oE 'Modem/[0-9]+' \
@@ -79,7 +79,7 @@ get_modem_id() {
         | cut -d/ -f2
 }
 
-# ── Helper: set WiFi sebagai backup ─────────────────────────
+# ── Helper: set WiFi as backup ─────────────────────────
 set_wifi_backup() {
     local found=0
     while IFS=: read -r cname ctype; do
@@ -94,46 +94,46 @@ set_wifi_backup() {
             found=1
         fi
     done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null)
-    [ "$found" -eq 0 ] && log "Tidak ada profil WiFi ditemukan."
+    [ "$found" -eq 0 ] && log "No WiFi profile found."
 }
 
-# ── Helper: kirim AT command ke serial port ──────────────────
-# Membuka file descriptor sementara, kirim command, baca response
+# ── Helper: send AT command to serial port ──────────────────
+# Open temporary file descriptor, send command, read response
 send_at() {
     local port="$1"
     local cmd="$2"
     local wait_sec="${3:-1}"
     local response
 
-    # Kirim command
+    # Send command
     printf '%s\r\n' "$cmd" > "$port" 2>/dev/null
     sleep "$wait_sec"
 
-    # Baca response (baca semua yang tersedia)
+    # Read response (read all available)
     response=$(dd if="$port" count=1 bs=4096 iflag=nonblock 2>/dev/null || true)
     echo "$response"
 }
 
 # ── Helper: parse AT+CGPSINFO → JSON ────────────────────────
 # Format: +CGPSINFO: ddmm.mmmm,N/S,dddmm.mmmm,E/W,DDMMYY,HHMMSS.s,alt,speed,course
-# Contoh fix:    +CGPSINFO: 0114.5506,S,11649.5982,E,270826,173042.0,8.2,0.0,0.0
-# Contoh no fix: +CGPSINFO: ,,,,,,,,
+# Example fix: +CGPSINFO: 0114.5506,S,11649.5982,E,270826,173042.0,8.2,0.0,0.0
+# Example fix number: +CGPSINFO: ,,,,,,,,
 parse_cgpsinfo() {
     local raw="$1"
     local line
 
-    # Ekstrak baris +CGPSINFO
+    # Extract the +CGPSINFO line
     line=$(echo "$raw" | grep -oE '\+CGPSINFO:[^\r\n]+' | head -n1 || true)
     if [ -z "$line" ]; then
         echo ""
         return 1
     fi
 
-    # Ambil bagian setelah ":"
+    # Take the part after ":"
     local data
     data=$(echo "$line" | sed 's/+CGPSINFO:[[:space:]]*//')
 
-    # Cek apakah ada fix (field pertama tidak kosong)
+    # Check if there is a fix (the first field is not empty)
     local lat_raw
     lat_raw=$(echo "$data" | cut -d, -f1 | tr -d ' ')
     if [ -z "$lat_raw" ]; then
@@ -151,7 +151,7 @@ parse_cgpsinfo() {
     spd=$(echo     "$data" | cut -d, -f8)
     crs=$(echo     "$data" | cut -d, -f9 | tr -d '[:space:]')
 
-    # Konversi NMEA ddmm.mmmm → desimal (pakai awk)
+    # Convert NMEA ddmm.mmmm → decimal (use awk)
     local lat lon
     lat=$(awk -v nmea="$lat_raw" -v dir="$lat_ns" '
         BEGIN {
@@ -174,7 +174,7 @@ parse_cgpsinfo() {
         }
     ')
 
-    # Format tanggal dan waktu
+    # Date and time format
     local date_fmt utc_fmt
     if [ ${#date_raw} -eq 6 ]; then
         date_fmt="${date_raw:0:2}/${date_raw:2:2}/20${date_raw:4:2}"
@@ -199,7 +199,7 @@ parse_cgpsinfo() {
     return 0
 }
 
-# ── Helper: tulis cache GPS (fix=false / fallback) ───────────
+# ── Helper: write cache GPS (fix=false / fallback) ───────────
 write_gps_cache_fallback() {
     local reason="$1"
     local ts
@@ -207,10 +207,10 @@ write_gps_cache_fallback() {
     cat > "$GPS_CACHE_FILE" <<EOF
 {"fix":false,"lat":null,"lon":null,"reason":"${reason}","source":"none","timestamp":${ts}}
 EOF
-    log_gps "Cache ditulis (no fix): $reason"
+    log_gps "Cache written (no fix): $reason"
 }
 
-# ── Helper: Cari port AT yang tidak sibuk ────────────────────
+# ── Helper: Look for an AT port that is not busy ────────────────────
 find_at_port() {
     local default_port="$1"
     local candidates="$default_port /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB1"
@@ -221,21 +221,21 @@ find_at_port() {
             continue
         fi
 
-        # Hindari cek port yang sama dua kali
+        # Avoid checking the same port twice
         if echo "$checked" | grep -q " $p "; then
             continue
         fi
         checked="$checked$p "
 
-        # Cek apakah dipakai proses lain (contoh: ModemManager)
+        # Check whether another process is used (example: ModemManager)
         if fuser "$p" > /dev/null 2>&1; then
             continue
         fi
 
-        # Coba seting stty
+        # Try setting stty
         stty -F "$p" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || continue
 
-        # Coba kirim AT dalam subshell
+        # Try sending AT in subshell
         (
             exec 7<>"$p" || exit 1
             printf 'AT\r\n' >&7
@@ -257,55 +257,55 @@ find_at_port() {
     return 1
 }
 
-# ── GPS fetch — fungsi utama ─────────────────────────────────
+# ── GPS fetch — main function ─────────────────────────────────
 gps_fetch() {
     local config_port="$1"
     local port
 
-    log_gps "Mencari port AT yang bebas (ModemManager mungkin mengunci $config_port)..."
+    log_gps "Looking for a free AT port (ModemManager may be locking $config_port)..."
     port=$(find_at_port "$config_port")
 
     if [ -z "$port" ]; then
-        log_gps "Tidak ada port AT yang bebas dan merespons. GPS skip."
+        log_gps "No AT ports are free and responding. GPS skip."
         write_gps_cache_fallback "no_available_at_port"
         return 0
     fi
 
-    log_gps "Menggunakan port AT: $port"
+    log_gps "Using AT port: $port"
 
-    # Konfigurasi serial port
+    # Serial port configuration
     stty -F "$port" "$SIM_BAUD" raw -echo cs8 -cstopb -parenb 2>/dev/null || {
-        log_gps "Gagal konfigurasi stty $port. GPS skip."
+        log_gps "Failed to configure stty $port. GPS skip."
         write_gps_cache_fallback "stty_failed"
         return 0
     }
 
-    # Buka file descriptor ke port
+    # Open the file descriptor to the port
     exec 7<>"$port" 2>/dev/null || {
-        log_gps "Gagal buka $port. GPS skip."
+        log_gps "Failed to open $port. GPS skip."
         write_gps_cache_fallback "fd_open_failed"
         return 0
     }
 
-    # Test AT dasar (sudah dipastikan oleh find_at_port, tapi pastikan lagi di fd ini)
+    # Basic AT test (already confirmed by find_at_port, but confirm again in this fd)
     printf 'AT\r\n' >&7
     sleep 1
     local at_resp
     at_resp=$(dd <&7 count=1 bs=512 iflag=nonblock 2>/dev/null || true)
     if ! echo "$at_resp" | grep -q "OK"; then
-        log_gps "Modem tidak merespons AT. GPS skip."
+        log_gps "The modem is not responding to AT. GPS skip."
         exec 7>&-
         write_gps_cache_fallback "modem_no_at_response"
         return 0
     fi
-    log_gps "Modem merespons AT."
+    log_gps "The modem responds to AT."
 
-    # Cek status GPS sebelum nyalakan
+    # Check the status of GPS before turning it on
     printf 'AT+CGPS?\r\n' >&7; sleep 1
     local status_resp
     status_resp=$(dd <&7 count=1 bs=512 iflag=nonblock 2>/dev/null || true)
 
-    # Nyalakan GPS engine
+    # Turn on the GPS engine
     printf 'AT+CGPS=1\r\n' >&7; sleep 2
     local on_resp
     on_resp=$(dd <&7 count=1 bs=512 iflag=nonblock 2>/dev/null || true)
@@ -313,20 +313,20 @@ gps_fetch() {
     if echo "$on_resp" | grep -qE "OK|\+CGPS:"; then
         log_gps "GPS engine ON (AT+CGPS=1)."
     elif echo "$status_resp" | grep -q "+CGPS: 1"; then
-        log_gps "GPS engine sudah ON sebelumnya."
+        log_gps "GPS engine was ON previously."
     else
         log_gps "Respon AT+CGPS=1: $(echo "$on_resp" | tr -d '\r\n' | head -c 80)"
-        log_gps "Lanjut polling meski respon tidak ideal..."
+        log_gps "Continue polling even though the response is not ideal..."
     fi
 
     local attempt fix_found=0 gps_json=""
 
     for attempt in 1 2 3; do
         if [ "$attempt" -eq 1 ]; then
-            log_gps "Percobaan $attempt/$GPS_ATTEMPTS: warm-up ${GPS_WARMUP_FIRST}s (cold start GPS butuh waktu)..."
+            log_gps "Experiment $attempt/$GPS_ATTEMPTS: warm-up ${GPS_WARMUP_FIRST}s (cold start GPS takes time)..."
             sleep "$GPS_WARMUP_FIRST"
         else
-            log_gps "Percobaan $attempt/$GPS_ATTEMPTS: tunggu ${GPS_RETRY_WAIT}s sebelum retry..."
+            log_gps "Trial $attempt/$GPS_ATTEMPTS: wait for ${GPS_RETRY_WAIT}s before retrying..."
             sleep "$GPS_RETRY_WAIT"
         fi
 
@@ -334,44 +334,44 @@ gps_fetch() {
 
         local elapsed=0
         while [ "$elapsed" -lt "$GPS_POLL_TIMEOUT" ]; do
-            # Bersihkan buffer
+            # Clear the buffer
             dd <&7 count=1 bs=4096 iflag=nonblock > /dev/null 2>&1 || true
 
-            # Kirim AT+CGPSINFO
+            # Send AT+CGPSINFO
             printf 'AT+CGPSINFO\r\n' >&7
             sleep "$GPS_POLL_INTERVAL"
 
             local raw_resp
             raw_resp=$(dd <&7 count=1 bs=2048 iflag=nonblock 2>/dev/null || true)
 
-            # Coba parse
+            # Try parsing
             gps_json=$(parse_cgpsinfo "$raw_resp")
             if [ -n "$gps_json" ]; then
-                log_gps "FIX ditemukan pada percobaan $attempt! lat=$(echo "$gps_json" | grep -oP '"lat":\K[0-9.-]+'), lon=$(echo "$gps_json" | grep -oP '"lon":\K[0-9.-]+')"
+                log_gps "FIX discovered in experiment $attempt! lat=$(echo"$gps_json" | grep -oP '"lat":\K[0-9.-]+'), lon=$(echo "$gps_json" | grep -oP '"lon":\K[0-9.-]+')"
                 fix_found=1
                 break 2
             fi
 
             elapsed=$(( elapsed + GPS_POLL_INTERVAL ))
-            log_gps "  Belum fix (${elapsed}s/${GPS_POLL_TIMEOUT}s)..."
+            log_gps "Not yet fixed (${elapsed}s/${GPS_POLL_TIMEOUT}s)..."
         done
 
-        log_gps "Percobaan $attempt gagal fix dalam ${GPS_POLL_TIMEOUT}s."
+        log_gps "Attempt $attempt failed to fix in ${GPS_POLL_TIMEOUT}s."
     done
 
-    # Matikan GPS engine (hemat daya) — opsional, karena main.py tidak pakai serial
+    # Turn off GPS engine (power saving) — optional, because main.py does not use serial
     printf 'AT+CGPS=0\r\n' >&7; sleep 1
     exec 7>&-
-    log_gps "GPS engine OFF, port ditutup."
+    log_gps "GPS engine OFF; port closed."
 
     if [ "$fix_found" -eq 1 ]; then
         echo "$gps_json" > "$GPS_CACHE_FILE"
-        log_gps "Cache GPS disimpan: $GPS_CACHE_FILE"
+        log_gps "GPS cache saved: $GPS_CACHE_FILE"
         log_gps "  Data: $gps_json"
     else
         write_gps_cache_fallback "all_${GPS_ATTEMPTS}_attempts_failed"
-        log_gps "Semua $GPS_ATTEMPTS percobaan GPS gagal. Cache fallback ditulis."
-        log_gps "main.py akan pakai koordinat dari .env sebagai fallback."
+        log_gps "All $GPS_ATTEMPTS attempts GPS failed. The fallback cache is written."
+        log_gps "main.py will use the coordinates from .env as a fallback."
     fi
 
     return 0
@@ -381,38 +381,38 @@ gps_fetch() {
 # MAIN
 # ============================================================
 log "============================================================"
-log "EFWS Network Setup dimulai"
+log "EFWS Network Setup started"
 log "Connection : $CONNECTION_NAME"
 log "SIM port   : $SIM_AT_PORT"
 log "GPS cache  : $GPS_CACHE_FILE"
 
-# ── Step 1: Pastikan service berjalan ────────────────────────
-log "[1/8] Cek ModemManager & NetworkManager..."
+# ── Step 1: Make sure the service is running ────────────────────────
+log "[1/8] Check ModemManager & NetworkManager..."
 systemctl is-active --quiet ModemManager  || { log "Start ModemManager...";  systemctl start ModemManager;  }
 systemctl is-active --quiet NetworkManager || { log "Start NetworkManager..."; systemctl start NetworkManager; }
 sleep 2
 
-# ── Step 2: Nyalakan radio WWAN, matikan konflik ─────────────
-log "[2/8] Aktifkan WWAN radio..."
+# ── Step 2: Turn on radio WWAN, turn off conflict ─────────────
+log "[2/8] Enable WWAN radio..."
 nmcli radio wwan on 2>/dev/null || true
 poff -a     2>/dev/null || true
 pkill -9 pppd 2>/dev/null || true
 
-# ── Step 3: Tunggu modem terdeteksi ─────────────────────────
-log "[3/8] Tunggu modem SIM7600..."
+# ── Step 3: Wait for the modem to be detected ─────────────────────────
+log "[3/8] Wait for modem SIM7600..."
 MODEM_ID=""
 for attempt in $(seq 1 "$MODEM_WAIT_ATTEMPTS"); do
     MODEM_ID=$(get_modem_id)
     if [ -n "$MODEM_ID" ]; then
-        log "Modem ditemukan: Modem/$MODEM_ID"
+        log "Modem found: Modem/$MODEM_ID"
         break
     fi
-    log "  Menunggu modem: $attempt/$MODEM_WAIT_ATTEMPTS ..."
+    log "Waiting for modem: $attempt/$MODEM_WAIT_ATTEMPTS..."
     sleep "$MODEM_WAIT_DELAY"
 done
 
 if [ -z "$MODEM_ID" ]; then
-    log "PERINGATAN: Modem tidak ditemukan. Skip setup GSM."
+    log "WARNING: Modem not found. Skip setup GSM."
     write_gps_cache_fallback "modem_not_found"
     exit 0
 fi
@@ -425,7 +425,7 @@ OPERATOR_CODE=$(echo "$MODEM_INFO" | grep -oP 'modem\.3gpp\.operator-code\s*:\s*
 log "Model modem    : ${MODEM_MODEL:-unknown}"
 log "Operator code  : ${OPERATOR_CODE:-unknown}"
 
-# ── Step 4: Tentukan APN berdasarkan provider ────────────────
+# ── Step 4: Determine APN based on provider ────────────────
 log "[4/8] Tentukan APN..."
 case "${OPERATOR_CODE:-}" in
     "51010") PROVIDER="Telkomsel / by.U"; APN="internet"  ;;
@@ -443,12 +443,12 @@ log "APN      : $APN"
 mmcli -m "$MODEM_ID" --enable >> "$LOG_FILE" 2>&1 || true
 sleep 2
 
-# ── Step 5: Buat / update profil nmcli ──────────────────────
-log "[5/8] Konfigurasi profil EWS-4G..."
+# ── Step 5: Create / update nmcli profile ──────────────────────
+log "[5/8] EWS-4G profile configuration..."
 if nmcli connection show "$CONNECTION_NAME" &>/dev/null; then
-    log "Update profil '$CONNECTION_NAME'..."
+    log "Update profile '$CONNECTION_NAME'..."
 else
-    log "Buat profil baru '$CONNECTION_NAME'..."
+    log "Create a new profile '$CONNECTION_NAME'..."
     nmcli connection add type gsm ifname "*" con-name "$CONNECTION_NAME" apn "$APN" \
         >> "$LOG_FILE" 2>&1 || true
 fi
@@ -462,35 +462,35 @@ nmcli connection modify "$CONNECTION_NAME" \
     ipv6.method                    ignore \
     >> "$LOG_FILE" 2>&1 || true
 
-# ── Step 6: Set WiFi sebagai backup ─────────────────────────
-log "[6/8] Set WiFi sebagai backup..."
+# ── Step 6: Set WiFi as backup ─────────────────────────
+log "[6/8] Set WiFi as backup..."
 set_wifi_backup
 
-# ── Step 7: Aktifkan koneksi 4G ─────────────────────────────
-log "[7/8] Aktifkan koneksi EWS-4G..."
+# ── Step 7: Activate 4G connection ─────────────────────────────
+log "[7/8] Enable connection EWS-4G..."
 nmcli connection down "$CONNECTION_NAME" >> "$LOG_FILE" 2>&1 || true
 sleep 1
 
 CONNECTED=0
 for attempt in 1 2 3 4 5; do
-    log "  Percobaan koneksi: $attempt/5..."
+    log "Connection attempt: $attempt/5..."
     if nmcli connection up "$CONNECTION_NAME" >> "$LOG_FILE" 2>&1; then
         CONNECTED=1
-        log "Koneksi '$CONNECTION_NAME' berhasil aktif!"
+        log "Connection '$CONNECTION_NAME' is successfully active!"
         break
     fi
-    log "  Gagal, tunggu 5s..."
+    log "Failed, wait 5s..."
     sleep 5
 done
 
 if [ "$CONNECTED" -ne 1 ]; then
-    log "PERINGATAN: Koneksi GSM gagal diaktifkan."
+    log "WARNING: Connection GSM failed to activate."
 fi
 
 sleep 3
 
-# ── Step 8: Verifikasi & log hasil ──────────────────────────
-log "[8/8] Verifikasi koneksi..."
+# ── Step 8: Verify & log results ──────────────────────────
+log "[8/8] Verify connection..."
 
 ACTIVE_IFACE=""
 for iface in wwan0 cdc-wdm0 usb0; do
@@ -502,32 +502,32 @@ done
 
 if [ -n "$ACTIVE_IFACE" ]; then
     IP_INFO=$(ip addr show "$ACTIVE_IFACE" | grep "inet " | awk '{print $2}' | head -n1)
-    log "Interface aktif : $ACTIVE_IFACE"
+    log "Active interface: $ACTIVE_IFACE"
     log "IP address      : ${IP_INFO:-unknown}"
 else
-    log "INFO: Belum ada IP pada interface GSM (nmcli mungkin masih proses)."
+    log "INFO: No IP yet on interface GSM (nmcli may still be processing)."
 fi
 
 log "Default route:"
 ip route show default | tee -a "$LOG_FILE" | head -5
 
 if ip route show default | grep -qE "wwan|cdc-wdm|usb"; then
-    log "✓ Interface GSM menjadi koneksi utama."
+    log "✓ Interface GSM is the main connection."
 else
-    log "i Default route belum via GSM — WiFi mungkin lebih dulu atau GSM belum IP."
+    log "i Default route is not yet via GSM — WiFi may come first or GSM is not IP yet."
 fi
 
-# ── GPS Fetch (3 percobaan dengan warm-up) ───────────────────
+# ── GPS Fetch (3 attempts with warm-up) ───────────────────
 log "------------------------------------------------------------"
-log "GPS FETCH — $GPS_ATTEMPTS percobaan | warm-up: ${GPS_WARMUP_FIRST}s"
+log "GPS FETCH — $GPS_ATTEMPTS trial | warm-up: ${GPS_WARMUP_FIRST}s"
 log "  Port        : $SIM_AT_PORT"
-log "  Poll timeout: ${GPS_POLL_TIMEOUT}s per percobaan"
-log "  Retry wait  : ${GPS_RETRY_WAIT}s antar percobaan"
-log "  Cache file  : $GPS_CACHE_FILE"
+log "Poll timeout: ${GPS_POLL_TIMEOUT}s per attempt"
+log "Retry wait : ${GPS_RETRY_WAIT}s between tries"
+log "Cache file : $GPS_CACHE_FILE"
 log "------------------------------------------------------------"
 
 gps_fetch "$SIM_AT_PORT"
 
 log "============================================================"
-log "EFWS Network Setup selesai."
+log "EFWS Network Setup is complete."
 exit 0

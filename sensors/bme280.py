@@ -1,7 +1,7 @@
 """
 BME280 — Temperature / Humidity / Pressure ambient sensor (I2C).
-Dipakai untuk deteksi kondisi ambient (suhu tinggi + kelembaban rendah =
-risiko kebakaran meningkat). TIDAK lewat MCP3008/LLC — modul ini I2C native.
+Used for detection of ambient conditions (high temperature + low humidity =
+increased risk of fire). NOT via MCP3008/LLC — this module is native I2C.
 
 Requires: pip install smbus2 RPi.bme280
 """
@@ -19,53 +19,53 @@ except ImportError:
 class BME280Sensor:
     def __init__(self, bus=None, address=None):
         if smbus2 is None or _bme280_lib is None:
-            raise RuntimeError("smbus2/RPi.bme280 tidak terinstall - pip install smbus2 RPi.bme280")
+            raise RuntimeError("smbus2/RPi.bme280 not installed - pip install smbus2 RPi.bme280")
 
         self.bus_num  = bus     if bus     is not None else settings.I2C_BUS
         self.address  = address if address is not None else settings.BME280_ADDRESS
         self.bus       = smbus2.SMBus(self.bus_num)
         
-        # ─── MODIFIKASI 1: BANGUNKAN SENSOR SECARA MANUAL (ANTI SLEEP/ERRNO 5) ───
+        # ─── MODIFICATION 1: MANUALLY WAKE UP THE SENSOR (ANTI SLEEP/ERRNO 5) ───
         self._initialize_sensor_hardware()
         
-        # Ambil data kalibrasi setelah sensor dipastikan terbangun dan stabil
+        # Take calibration data after the sensor is confirmed to be awake and stable
         try:
             self.calib = _bme280_lib.load_calibration_params(self.bus, self.address)
         except OSError as e:
-            # Jika masih error, kita beri toleransi jeda dan coba sekali lagi
+            # If there is still an error, we will allow a pause and try again
             time.sleep(0.2)
             self.calib = _bme280_lib.load_calibration_params(self.bus, self.address)
 
     def _initialize_sensor_hardware(self):
         """
-        Memaksa sensor masuk ke Normal Mode dengan membaca/menulis per-byte.
-        Sangat krusial untuk mengatasi kabel panjang 1.5m dan drop tegangan.
+Forces the sensor to enter Normal Mode by reading/writing one byte at a time.
+It is crucial to overcome the 1.5m long cable and voltage drop.
         """
         try:
-            # Pancing koneksi dengan membaca Chip ID (Byte tunggal)
+            # Provoke connection by reading Chip ID (Single Byte)
             chip_id = self.bus.read_byte_data(self.address, 0xD0)
             
             if chip_id == 0x60:
-                # Daftarkan konfigurasi ke register kontrol (0xF2 dan 0xF4) secara bertahap
+                # Register the configuration to the control registers (0xF2 and 0xF4) in stages
                 # Atur Humidity Oversampling 1x (Reg 0xF2)
                 self.bus.write_byte_data(self.address, 0xF2, 0x01)
                 time.sleep(0.05)
                 
-                # Paksa masuk Normal Mode (Reg 0xF4) -> Temp x1, Press x1, Mode Normal
+                # Force enter Normal Mode (Reg 0xF4) -> Temp x1, Press x1, Normal Mode
                 self.bus.write_byte_data(self.address, 0xF4, 0x27)
-                time.sleep(0.1) # Beri waktu sirkuit internal sensor mengisi daya
+                time.sleep(0.1) # Give the sensor's internal circuitry time to charge
         except Exception:
-            # Biarkan lolos jika gagal, agar tidak langsung membuat crash aplikasi utama
+            # Let it escape if it fails, so as not to immediately crash the main application
             pass
 
     def read(self) -> dict:
         try:
             data = _bme280_lib.sample(self.bus, self.address, self.calib)
             
-            # Validasi apakah data yang didapat konstan 0x800000 (tidak valid / tertidur)
-            # Pada library RPi.bme280, jika ia gagal, nilai temperatur biasanya bernilai ekstrem atau None
+            # Validate whether the data obtained is constant 0x800000 (invalid / asleep)
+            # In the RPi.bme280 library, if it fails, the temperature value is usually an extreme value or None
             if data.temperature == 0.0 and data.humidity == 0.0:
-                 raise ValueError("Data sensor kosong / tidak valid")
+                 raise ValueError("Sensor data is empty/invalid")
 
             return {
                 "temperature_c":    round(data.temperature, 2),
@@ -73,7 +73,7 @@ class BME280Sensor:
                 "pressure_hpa":     round(data.pressure, 2),
             }
         except Exception as e:
-            # Jika terjadi error saat operasional, coba bangunkan kembali hardware-nya
+            # If an error occurs during operation, try waking up the hardware again
             self._initialize_sensor_hardware()
             return {"temperature_c": None, "humidity_percent": None,
                     "pressure_hpa": None, "error": str(e)}
@@ -90,4 +90,4 @@ if __name__ == "__main__":
             time.sleep(2)
     except KeyboardInterrupt:
         sensor.close()
-        print("\nPengujian dihentikan.")
+        print("\nTest stopped.")

@@ -1,10 +1,10 @@
 """
 TEST — Soil Moisture Probe (dua probe: surface + deep)
 
-Probe SURFACE (CH2): kedalaman 0-30cm — kondisi permukaan tanah
-Probe DEEP    (CH3): kedalaman 30-60cm — kelembaban dalam tanah
+SURFACE probe (CH2): depth 0-30cm — ground surface conditions
+DEEP probe (CH3): depth 30-60cm — moisture in the soil
 
-Evaluasi di EFWS mengambil nilai TERENDAH (terburuk) dari keduanya.
+The evaluation on EFWS takes the LOWEST (worst) value of the two.
 
 Usage: python3 tests/test_soil.py
 """
@@ -19,16 +19,16 @@ print("=" * 60)
 
 try:
     sensor = SoilMoistureSensor()
-    print("[OK] Soil sensor diinisialisasi (CH2=surface, CH3=deep).\n")
+    print("[OK] Soil sensor initialized (CH2=surface, CH3=deep).\n")
 except Exception as e:
     print(f"[FAIL] {e}"); sys.exit(1)
 
-print("LANGKAH KALIBRASI per probe:")
-print("  1. Probe di UDARA KERING → catat 'raw' → itu dry_raw")
-print("  2. Probe TERENDAM AIR    → catat 'raw' → itu wet_raw")
-print("  Update nilai di sensors/soil.py SoilMoistureSensor.__init__\n")
+print("CALIBRATION STEPS per probe:")
+print("1. Probe in DRY AIR → note 'raw' → that's dry_raw")
+print("2. The probe is submerged in water → note 'raw' → that's wet_raw")
+print("Update value in sensors/soil.py SoilMoistureSensor.__init__\n")
 
-print("Membaca tiap 1 detik (Ctrl+C untuk stop)...\n")
+print("Reading every 1 second (Ctrl+C to stop)...\n")
 try:
     for _ in range(20):
         d = sensor.read()

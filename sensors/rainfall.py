@@ -45,16 +45,16 @@ class RainfallSensor:
 
         self.bus = smbus2.SMBus(self.bus_num)
 
-        # Validasi identitas chip (PID/VID) SEKARANG, saat init -- bukan diam-diam
-        # menerima data dari alamat I2C manapun yang kebetulan nyambung di sana.
-        # Kalau device salah/tidak ada, __init__ ini raise (integrasi dengan
-        # NullSensor fallback di main.py sama seperti sensor lain).
+        # Validate the chip identity (PID/VID) NOW, during initialization -- do not silently
+        # receive data from any address I2C that happens to be connected there.
+        # If the wrong device is present or no device exists, __init__ raises (integrates with
+        # NullSensor fallback in main.py is the same as other sensors).
         if not self.begin():
             self.bus.close()
             raise RuntimeError(
-                f"Rainfall sensor: PID/VID tidak cocok di alamat I2C "
-                f"0x{self.address:02X} bus {self.bus_num} -- device salah atau "
-                f"belum terpasang."
+                f"Rainfall sensor: PID/VID does not match at address I2C"
+                f"0x{self.address:02X} bus {self.bus_num}-- wrong device or"
+                f"not installed yet."
             )
 
     ############################################################
@@ -84,7 +84,7 @@ class RainfallSensor:
             except OSError as e:
                 if attempt == 2:
                     raise OSError(
-                        f"I2C read gagal setelah 3 percobaan "
+                        f"I2C read failed after 3 attempts"
                         f"(register=0x{register:02X}, address=0x{self.address:02X})"
                     ) from e
                 time.sleep(0.05)
@@ -107,7 +107,7 @@ class RainfallSensor:
             except OSError as e:
                 if attempt == 2:
                     raise OSError(
-                        f"I2C write gagal setelah 3 percobaan "
+                        f"I2C write failed after 3 attempts"
                         f"(register=0x{register:02X}, address=0x{self.address:02X})"
                     ) from e
                 time.sleep(0.05)
@@ -184,7 +184,7 @@ class RainfallSensor:
             [hours]
         )
 
-        # sama seperti library Arduino
+        # the same as the Arduino library
         time.sleep(0.10)
 
     def window_rainfall(self):

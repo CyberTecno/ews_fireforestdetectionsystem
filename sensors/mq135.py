@@ -1,10 +1,10 @@
 """
-MQ-135 Air Quality Sensor driver (NH3, NOx, alkohol, benzena, CO2, asap).
-Analog-only -> dibaca lewat MCP3008 (SPI ADC), channel default CH1.
-Sinyal AOUT MQ-135 (0-5V) WAJIB lewat logic level converter sebelum masuk
-ke MCP3008 (lihat docs/Pinout.md).
+MQ-135 Air Quality Sensor driver (NH3, NOx, alcohol, benzene, CO2, smoke).
+Analog-only -> read via MCP3008 (SPI ADC), default channel CH1.
+The signal AOUT MQ-135 (0-5V) MUST passes through the logic level converter before entering
+to MCP3008 (see docs/Pinout.md).
 
-Kalibrasi terhadap baseline udara bersih diperlukan untuk akurasi produksi.
+Calibration against a clean air baseline is necessary for production accuracy.
 """
 import time
 from config import settings
@@ -23,7 +23,7 @@ class MQ135Sensor:
         voltage = self.read_voltage()
         if voltage <= 0:
             return 0.0
-        # CALIBRATE: pendekatan linear placeholder
+        # CALIBRATE: placeholder linear approximation
         ppm = max(0.0, (voltage - 0.3) * 900)
         return round(ppm, 2)
 

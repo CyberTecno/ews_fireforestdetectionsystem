@@ -1,24 +1,24 @@
 """
-IR Flame Sensor -- dibaca via AO (analog) di MCP3008 CH6.
+IR Flame Sensor -- read via AO (analog) on ​​MCP3008 CH6.
 
-Keputusan user: sensor ini dikabel HANYA lewat AO ke MCP3008, BUKAN lewat
-GPIO digital DO -- jadi tidak perlu RPi.GPIO/level converter tambahan untuk
-sensor ini, cukup lewat jalur analog yang sama seperti sensor MCP3008
-lainnya (get_mcp3008()).
+User decision: this sensor is wired ONLY via AO to MCP3008, NOT via
+GPIO digital DO -- so no need for an additional RPi.GPIO/level converter for
+This sensor simply goes through the same analog route as the MCP3008 sensor
+others (get_mcp3008()).
 
 ============================================================
-KALIBRASI WAJIB SEBELUM DIPASANG DI LAPANGAN
+CALIBRATION IS MANDATORY BEFORE INSTALLING IN THE FIELD
 ============================================================
-FLAME_AO_THRESHOLD_V di config/settings.py baru PERKIRAAN AWAL (setengah
-VREF, 1.65V), BELUM diukur dari unit fisik Anda. Cara kalibrasi:
-  1. Jalankan file ini langsung (`python sensors/flame.py`) di kondisi
-     normal (tidak ada api) -- catat nilai "AO" yang tercetak.
-  2. Dekatkan sumber api kecil yang aman (korek api / lilin, jarak wajar,
-     JANGAN sampai merusak sensor) -- catat nilai "AO" yang tercetak.
-  3. Set EFWS_FLAME_AO_THRESHOLD_V di .env ke nilai di antara keduanya.
-  4. Kalau AO TURUN saat ada api (umum untuk banyak modul comparator IR),
-     biarkan trigger_below=True (default). Kalau AO malah NAIK saat ada
-     api pada modul Anda, panggil FlameSensor(trigger_below=False).
+FLAME_AO_THRESHOLD_V in new config/settings.py INITIAL ESTIMATE (half
+VREF, 1.65V), YET is measured from your physical unit. How to calibrate:
+1. Run this file directly (`python sensors/flame.py`) in condition
+normal (no flame) -- note the printed "AO" value.
+2. Bring a safe source of small fire (matches/candles, reasonable distance,
+DO NOT damage the sensor) -- note the printed "AO" value.
+3. Set EFWS_FLAME_AO_THRESHOLD_V in .env to a value between the two.
+4. If AO TURUN when there is a fire (common for many IR comparator modules),
+let trigger_below=True (default). If it's AO, it's actually NAIK when it's there
+fire on your module, call FlameSensor(trigger_below=False).
 """
 from config import settings
 from sensors.mcp3008 import get_mcp3008
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     import time
     sensor = FlameSensor()
     print(f"=== EFWS Flame Sensor Test (CH{sensor.channel}, threshold={sensor.threshold_v}V) ===")
-    print("Belum dikalibrasi -- gunakan angka AO di bawah untuk menentukan threshold yang benar.\n")
+    print("Not yet calibrated -- use the AO numbers below to determine the correct threshold.\n")
     while True:
         r = sensor.read()
         print(f"AO={r['analog_voltage']:.3f}V | flame_detected={r['flame_detected']}")

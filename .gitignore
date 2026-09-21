@@ -1,7 +1,7 @@
-# ── WAJIB: jangan pernah commit file ini ke git ──────────────
+# ── MANDATORY: never commit this file to git ──────────────
 .env
 
-# ── Database lokal (data sensor, bisa besar) ─────────────────
+# ── Local database (sensor data, can be large) ─────────────────
 database/*.db
 database/*.db-shm
 database/*.db-wal
