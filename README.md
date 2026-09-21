@@ -49,3 +49,7 @@ efws/
 ├── logs/
 └── main.py
 ```
+
+## Documentation
+
+Start with the [documentation guide](docs/README.md) for wiring, power, deployment, architecture, and modem setup.

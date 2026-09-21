@@ -1,15 +1,6 @@
-# README — Setup SIM7600E as Raspberry Pi Primary Connection
+# Set up SIM7600E as the primary Raspberry Pi connection
 
-> **Scope of this document:** **SIM7600E-H** modem only. EFWS also supports **A7670E**
-> as an alternative (`sim_detector.py` auto-detect is the one installed), but
-> The A7670E setup steps have not been documented separately here — if
-> required, ask to make your own documents.
->
-> **Regarding the naming of "A7670E" vs "SIM7670E":** this is the SAME module, not two modules
-> different. Some A7670E units report themselves as "SIM7670E" when asked
-> `ATI` (Product Identification), depending on the firmware — hence the code and then some
-> the docs mention "A7670E/SIM7670E" side by side. `sim_detector.py` has already taken care of it
-> these two naming variants are correct (tested through separate simulations).
+> **Scope:** This guide covers the SIM7600E-H modem. EFWS also supports A7670E, but its network setup is not covered here. Some A7670E firmware identifies itself as SIM7670E in the ATI response; the detector handles both names.
 
 This document contains a tutorial for setting up **SIM7600E-H 4G LTE modem** on **Raspberry Pi 4** so that it becomes the main internet connection, while **WiFi becomes the backup connection**.
 
@@ -29,7 +20,7 @@ If the SIM7600E modem is removed, the Raspberry Pi automatically returns to usin
 - Raspberry Pi 4
 - SIM7600E-H 4G HAT / USB modem
 - SIM card is active
-- Antena LTE
+- LTE antenna
 - USB data cable
 - Stable Raspberry Pi power supply
 - WiFi connection as backup
@@ -107,7 +98,7 @@ If it doesn't appear, try:
 ```text
 1. Replace the USB cable, make sure the data cable
 2. Press the modem PWRKEY / POWER button 2–3 seconds
-3. Pindah port USB
+3. Try a different USB port
 4. Use a more powerful power supply
 5. Try powered USB hub
 ```
@@ -347,7 +338,7 @@ Create files:
 nano ~/ews_network_setup.sh
 ```
 
-Isi:
+Add this script:
 
 ```bash
 #!/bin/bash
@@ -386,7 +377,7 @@ echo "[OK] Service is active."
 
 sleep 3
 
-echo "[2/7] Deteksi modem..."
+echo "[2/7] Detect modem..."
 
 MODEM_ID=$(mmcli -L 2>/dev/null | grep -oP 'Modem/\K[0-9]+' | head -n 1 || true)
 
@@ -547,7 +538,7 @@ ENTER
 CTRL + X
 ```
 
-Jadikan executable:
+Make the script executable:
 
 ```bash
 chmod +x ~/ews_network_setup.sh
@@ -787,7 +778,7 @@ ping -c 4 8.8.8.8
 
 ---
 
-## 16. Final connection structure
+## 16. Final connection layout
 
 ```text
 Raspberry Pi 4

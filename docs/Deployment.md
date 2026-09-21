@@ -1,20 +1,20 @@
-# EFWS — Deployment Wizard
+# Deploy EFWS on a Raspberry Pi
 
-From NOL to EFWS it runs stably as a systemd service on the Raspberry Pi.
+Follow this guide to install and run EFWS as a systemd service on a Raspberry Pi.
 
 **Hardware required:**
 Raspberry Pi 3 Model B+ / 4, MicroSD 32 GB, MCP3008 (SPI ADC), Logic Level Converter 4-ch,
 MQ-2, MQ-135, BME280 (I2C), Rainfall Sensor DFRobot SEN0575 (I2C),
 2× Soil Moisture Probe, Submersible Pressure Sensor (4-20 mA), Flame Sensor (IR AO),
 Voltage Sensor Module DC 0–25 V (battery), RS485 Anemometer + USB-RS485 Converter,
-Wind Direction JL-FSX2 (UART GPIO14/15), **SIM7600 4G HAT** (Waveshare, kartu biasa Telkomsel),
+Wind Direction JL-FSX2 (UART GPIO14/15), **SIM7600 4G HAT** (Waveshare, Telkomsel SIM card),
 Relay 5 V 1-ch, Siren 12 V.
 Power supply system: Solar Panel 100 W, SCC 20 A, LiFePO4 12 V, Buck Converter.
 
-**flat** project structure — `main.py` is directly at the root, parallel to
+**Flat** project structure — `main.py` is directly at the root, parallel to
 `venv/`, `.env`, `scripts/`, `logs/`, `database/`.
 
-**Two services running on the Raspberry Pi:**
+**Services running on the Raspberry Pi:**
 - `gsm-connect.service` — 4G connection + GPS fetch (run first, once at boot)
 - `efws.service` — main application EFWS (start after gsm-connect is complete)
 - `ews-gps-refresh.timer` — refreshes GPS every 30 minutes in background
@@ -57,7 +57,7 @@ cd /home/uwfadmin/ews
 
 ## STAGE 2 — OS setup (once only)
 
-### 2a. Install dependensi sistem
+### 2a. Install system dependencies
 
 ```bash
 sudo apt update && sudo apt install -y \
@@ -128,7 +128,7 @@ sudo reboot
 
 ```bash
 lsusb                    # should appear: SIMCom or Qualcomm (SIM7600)
-ls /dev/ttyUSB*          # should be: /dev/ttyUSB0 s/d ttyUSB3 (SIM7600) + ttyUSB4/5 (RS485)
+ls /dev/ttyUSB*          # should be: /dev/ttyUSB0 through /dev/ttyUSB3 (SIM7600) + ttyUSB4/5 (RS485)
 ls /dev/spidev*          # should be: /dev/spidev0.0 (MCP3008)
 i2cdetect -y 1           # should be: 0x76 (BME280) AND 0x1D (Rainfall SEN0575)
 ls /dev/serial0          # there must be (Wind Direction UART)
@@ -166,7 +166,7 @@ nano .env
 ```ini
 # Device identity (unique per unit in the field)
 EFWS_DEVICE_ID=DEV-JAM-001
-EFWS_DEVICE_TOKEN=token_rahasia_dari_backend
+EFWS_DEVICE_TOKEN=token_from_backend
 
 # For initial prototyping: open https://webhook.site, copy unique URL
 EFWS_API_URL=https://webhook.site/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -180,7 +180,7 @@ EFWS_RUN_MODE=mock
 EFWS_LAT=-6.2146
 EFWS_LON=106.8208
 
-# APN kartu SIM (Telkomsel = internet, Tri = 3data)
+# SIM card APN (Telkomsel = internet, Tri = 3data)
 # If not filled in, ews_network_setup.sh auto-detects the operator code
 EFWS_APN=internet
 ```
@@ -206,7 +206,7 @@ EFWS_CONNECTIVITY_CHECK_SEC=120     # Retry offline queue every 2 minutes
 
 ---
 
-## STEP 5 — 4G connection setup (gsm-connect.service)
+## STAGE 5 — 4G connection setup (gsm-connect.service)
 
 This is the **most important step** — without a 4G connection, data cannot be sent to the API.
 
@@ -389,7 +389,7 @@ Press `Ctrl+C` to stop. EFWS shutdown gracefully (siren turned off, connection c
 
 ---
 
-## STEP 9 — Install all services (production)
+## STAGE 9 — Install all services (production)
 
 ### 9a. Copy and enable all services
 
@@ -463,13 +463,13 @@ chmod +x scripts/efws_ctl.sh
 ./scripts/efws_ctl.sh start     # run in the background
 ./scripts/efws_ctl.sh status    # check + CPU/RAM
 ./scripts/efws_ctl.sh logs      # tail log real-time
-./scripts/efws_ctl.sh restart   # restart (tiap kali update kode)
+./scripts/efws_ctl.sh restart   # restart after each code update
 ./scripts/efws_ctl.sh stop      # stop
 ```
 
 ---
 
-## STEP 10 — Reboot command permission setup
+## STAGE 10 — Reboot command permission setup
 
 The backend can send the command `Reboot` via heartbeat response. EFWS
 execute it with `sudo systemctl restart efws.service` from the child process.
@@ -495,7 +495,7 @@ Once prototyping with webhook.site is complete and the original backend is ready
 ```bash
 nano .env
 #EFWS_API_URL=https://your-api.example/v1
-# EFWS_API_KEY=token_rahasia_dari_backend
+# EFWS_API_KEY=token_from_backend
 
 sudo systemctl restart efws
 ```
@@ -545,7 +545,7 @@ Verify in the log that `[Telemetry Publisher]` sends to the new URL and
 | Relay |Click but the siren doesn't sound|The 12 V siren source is not connected; COM/NO wiring is faulty|
 | Relay |Doesn't click|GPIO pin on `.env` does not match physical wiring; check `EFWS_GPIO_RELAY`|
 
-### Sistem & Service
+### System and services
 
 | Symptom | Possible Cause | Solution |
 |--------|----------------------|--------|
@@ -587,6 +587,6 @@ for r in db.recent_readings(5): print(r)
 db.close()
 "
 
-# ── Tools tambahan ───────────────────────────────────────────────────
+# ── Additional tools ───────────────────────────────────────────────────
 python3 tools/modbus_register_scan.py   # scan register Modbus anemometer
 ```

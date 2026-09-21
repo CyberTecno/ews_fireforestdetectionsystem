@@ -1,4 +1,4 @@
-# EFWS — Sensor Specification
+# Sensor specifications
 
 Complete reference of all hardware components used in EFWS. For wiring and
 pin assignment, see [`docs/Pinout.md`](Pinout.md). For software configuration (channel
@@ -8,7 +8,7 @@ ADC, address I2C, serial port), see [`config/settings.py`](../config/settings.py
 
 ## 1. Raspberry Pi 4 Model B
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 | SoC | Broadcom BCM2711 Quad-Core Cortex-A72 (ARM v8) 64-bit @ 1.5 GHz |
 | RAM | 8 GB LPDDR4-3200 |
@@ -29,9 +29,9 @@ development/prototyping. To PCB on permanent installation.
 
 ## 2. ADC — MCP3008
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Tipe | 10-bit SAR ADC, 8-channel single-ended |
+| Type | 10-bit SAR ADC, 8-channel single-ended |
 | Interface | SPI (bus 0, CE0) |
 | VREF | 3.3 V (= VDD) |
 | Resolusi | 1023 step (0–3.3 V per step ≈ 3.23 mV) |
@@ -54,9 +54,9 @@ development/prototyping. To PCB on permanent installation.
 
 ## 3. Logic Level Converter (LLC)
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Tipe | Bidirectional, 4-channel |
+| Type | Bidirectional, 4-channel |
 |HV side voltage|5 V (from 5 V Rail)|
 |LV side voltage|3.3 V (from Rail 3.3 V Pi)|
 |Channels used|4 of 4 (MQ-2, MQ-135, Soil Surface, Soil Deep)|
@@ -69,7 +69,7 @@ development/prototyping. To PCB on permanent installation.
 
 ## 4. MQ-2 — Gas & Smoke Sensor
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 |Detected gas| LPG, Butane, Propane, Methane, Hydrogen, Smoke |
 |Working voltage| 5 V DC |
@@ -93,7 +93,7 @@ Default: `MQ2_CRIT_PPM = 1000`, `W_MQ2 = 0.55` (bobot 55%).
 
 ## 5. MQ-135 — Air Quality Sensor
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 |Detected gas| NH₃, NOx, Alcohol, Benzene, Smoke, CO₂ (indikatif) |
 |Working voltage| 5 V DC |
@@ -108,10 +108,10 @@ Default: `MQ2_CRIT_PPM = 1000`, `W_MQ2 = 0.55` (bobot 55%).
 
 ## 6. BME280 — Temperature, Humidity, Air Pressure
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 |Temperature range|−40 to +85 °C|
-|Temperature accuracy| ±1 °C (tipikal) |
+|Temperature accuracy| ±1 °C (typical) |
 |Humidity range| 0–100 % RH |
 |Humidity accuracy| ±3 % RH |
 |Pressure range| 300–1100 hPa |
@@ -126,11 +126,11 @@ Column `pressure_hpa` is saved in SQLite (`sensor_readings`) but not sent to API
 
 ---
 
-## 7. Soil Moisture Sensor — Tipe Resistif
+## 7. Resistive soil moisture sensor
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Tipe | Resistif (dua probe logam) |
+| Type | Resistif (two metal probes) |
 |Working voltage| 5 V DC |
 |Output is used| AOUT (analog) → LLC → MCP3008 |
 |Number of probes| 2 (Surface CH2, Deep CH3) |
@@ -153,7 +153,7 @@ Column `pressure_hpa` is saved in SQLite (`sensor_readings`) but not sent to API
 
 ## 8. Gravity Tipping Bucket Rainfall Sensor — DFRobot SEN0575
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 | Resolusi | ±0.2794 mm per tipping |
 | Interface | I2C |
@@ -183,13 +183,13 @@ sampling (3 minutes), not every telemetry transmission.
 
 ## 9. Submersible Pressure Sensor — Water Level
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Prinsip |Hydrostatic pressure → current 4–20 mA|
+| Principle |Hydrostatic pressure → current 4–20 mA|
 |Depth range| 0–3 m |
 | Output | 4–20 mA (current loop) |
 |Power supplies| 12 V DC |
-|Interface to Pi|Burden resistor 100 Ω → voltage 1–5 V → MCP3008 CH4|
+|Interface to Pi|100 Ω burden resistor → 0.4–2.0 V at 4–20 mA → MCP3008 CH4|
 | Driver | `sensors/pressure.py` |
 | Setting | `PRESSURE_BURDEN_OHM=100`, `PRESSURE_RANGE_M=3.0` |
 
@@ -204,17 +204,13 @@ pressure_bar = depth_m × 0.0980665
 **Fault detection:** `fault_open_loop=True` if the burden voltage is close to 0 V
 (cable broken or sensor not submerged / not pressurized).
 
-> **Wiring note:** This sensor **doesn't** go through LLC. Output burden resistor already
-> in the 1–5 V range, still slightly above VREF MCP3008 (3.3 V) at current > 16.8 mA —
-> note that the reading will saturate above ~2.7 m if VREF = 3.3 V.
-> If the full range of 3 m is required, make sure the VREF is set to 5 V or use a load
-> 165 Ω for 20 mA → 3.3 V exactly.
+> **Wiring note:** With the configured 100 Ω burden resistor, the 4–20 mA loop produces 0.4–2.0 V. This fits within the MCP3008's 3.3 V reference, so the pressure signal connects directly to CH4 without the logic-level converter. Keep MCP3008 VDD and VREF at 3.3 V.
 
 ---
 
 ## 10. RS485 Anemometer — Wind Speed
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 | Protokol | RS485 Modbus RTU |
 |Power supplies| 12 V DC |
@@ -233,20 +229,20 @@ will damage the running RTU frame.
 
 ## 11. Industrial USB to RS485 Converter
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 | Konversi | USB ↔ RS485 |
 | Protocol | Supports Modbus RTU |
-| Proteksi | ESD, isolasi galvanik |
+| Protection | ESD, galvanic isolation |
 |Ports on the Pi|`/dev/ttyUSB0` (default, can be different depending on the enumeration order USB)|
 
 ---
 
 ## 12. Wind Direction Sensor — JL-FSX2
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Prinsip | Hall Effect (sensor A3144) + 1 magnet per posisi |
+| Principle | Hall Effect (sensor A3144) + 1 magnet per posisi |
 |Direction detected|8 directions (N, NE, E, SE, S, SW, W, NW)|
 |Working voltage| 5 V DC |
 | Interface | UART TTL (RX/TX) |
@@ -274,7 +270,7 @@ Sensor RX   (hijau)  → GPIO15 (Pin 10, TXD Pi)
 
 ## 13. Voltage Sensor Module — DC 0–25 V (Battery Monitor)
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 |Input range|0–25 V (hardware), safe up to **16.5 V** when VREF 3.3 V|
 | Principle | Internal fixed 1:5 voltage divider |
@@ -297,13 +293,13 @@ V_battery = (raw_ADC / 1023) × 16.5
 
 ## 14. IR Flame Sensor
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Prinsip |IR photodiode — detects IR radiation from flames (750–1100 nm)|
+| Principle |IR photodiode — detects IR radiation from flames (750–1100 nm)|
 |Output is used|AO (analog) → MCP3008 CH6 (direct, native 3.3 V, without LLC)|
 |Output is not used|DO (digital, not wired)|
 |Output voltage|Down when there is fire (default `trigger_below=True`)|
-| Threshold deteksi |`FLAME_AO_THRESHOLD_V = 1.65 V` (**PRIGINAL ESTIMATE, calibration required!**)|
+| Detection threshold |`FLAME_AO_THRESHOLD_V = 1.65 V` (initial estimate; calibration required)|
 | Driver | `sensors/flame.py` |
 
 **Prosedur kalibrasi lapangan:**
@@ -316,13 +312,13 @@ V_battery = (raw_ADC / 1023) × 16.5
 
 ## 15. Relay Module — 5 V 1-Channel
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 |Control voltage|5 V (GPIO Pi signal via onboard driver transistor)|
 |GPIO control| GPIO27 (Pin 13) — `EFWS_GPIO_RELAY` |
-| Kontak | NO (Normally Open) / NC (Normally Closed) / COM |
-| Kapasitas kontak |10 A / 250 VAC or 10 A / 30 VDC|
-| Beban | Siren 12 V (~1 A) |
+| Contacts | NO (Normally Open) / NC (Normally Closed) / COM |
+| Contact rating |10 A / 250 VAC or 10 A / 30 VDC|
+| Load | Siren 12 V (~1 A) |
 | Driver | `alarm/relay.py`, `alarm/siren.py` |
 
 **Pulsing alarm logic (from `alarm/siren.py`):**
@@ -337,12 +333,12 @@ V_battery = (raw_ADC / 1023) × 16.5
 
 ## 16. Siren 12 V
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
 |Working voltage| 12 V DC |
 |Power consumption| ~15–20 W |
-|Current consumption| ~600–1200 mA (~1 A tipikal) |
-| Intensitas suara | ±120 dB |
+|Current consumption| ~600–1200 mA (~1 A typical) |
+| Sound level | ±120 dB |
 |Control| Via Relay Module (GPIO27) |
 
 > The siren is supplied directly from the **12 V battery bus** (not from the 5 V buck converter),
@@ -353,9 +349,9 @@ V_battery = (raw_ADC / 1023) × 16.5
 
 ## 17. SIMCom A7670E — 4G LTE Modem
 
-| Parameter |Mark|
+| Parameter | Value |
 |-----------|-------|
-| Standar | LTE Cat-1 |
+| Standard | LTE Cat-1 |
 | Fallback | GSM / GPRS |
 | GNSS |Available (depending on variant — confirm with hardware label)|
 | Interface | UART (AT Command), USB |
@@ -369,7 +365,7 @@ V_battery = (raw_ADC / 1023) × 16.5
 |Function| AT Command |
 |--------|-----------|
 |Check the module| `AT` |
-| Identifikasi |`ATI` (for auto-detect on `sim_detector.py`)|
+| Identification |`ATI` (for auto-detect on `sim_detector.py`)|
 | Signal quality | `AT+CSQ` |
 | Network registration | `AT+CREG?` |
 | Set APN | `AT+CGDCONT=1,"IP","<APN>"` |

@@ -1,19 +1,8 @@
-# EFWS — Pinout & Wiring Reference
+# Pinout and wiring
 
-Hardware final:
-**Raspberry Pi 4 · MCP3008 (SPI ADC 8-ch) · 1x Logic Level Converter I2C-style
-(4-channel, bi-directional, 3.3~5.0V) · MQ-2 · MQ-135 · BME280 (I2C) ·
-Soil Probe Surface · Soil Probe Deep · Submersible Pressure Sensor (loop
-4-20mA) · DC Voltage Sensor Module (battery) · Flame Sensor (analog) ·
-DFRobot Gravity Rainfall Sensor SEN0575 (I2C) · RS485 Anemometer ·
-Wind Direction (UART GPIO14/15) A7670E OR SIM7600 (auto-detect, only
-one installed) · 5V Relay · 12V Siren**
+This guide maps the Raspberry Pi GPIO pins, MCP3008 inputs, sensors, modem, relay, and siren. Check the [power guide](PowerSystem.md) before wiring and the [sensor specifications](SensorSpecification.md) for device ratings.
 
-> No separate buzzer — just one relay + siren (2 levels of escalation
-> via pulsing vs. continuous on pattern, see `alarm/siren.py`). Thresholds &
-> alarm decision level is evaluated locally ONLY to turn on the siren
-> real-time — not saved to local database, due to alarm evaluation
-> The "official" is in the backend.
+EFWS uses one relay and one siren. The local alarm controller pulses the relay for warnings and holds it on for critical alarms. The backend handles the authoritative alarm evaluation.
 
 ---
 
@@ -30,7 +19,7 @@ one installed) · 5V Relay · 12V Siren**
 | UART RXD (Wind Direction) | GPIO14 | Pin 8  |Receive from TX sensor (yellow)|
 | UART TXD (Wind Direction) | GPIO15 | Pin 10 |Send to RX sensor (green) — rarely used, this sensor is one-way|
 |Siren Relay (output)| GPIO27 | Pin 13 |To IN relay 5V|
-| Status LED (output, opsional) | GPIO23 | Pin 16 | Indikator heartbeat |
+| Status LED (output, optional) | GPIO23 | Pin 16 | Heartbeat indicator |
 | 5V Rail | — | Pin 2 & 4 |Power LLC HV (not from here if the current is large)|
 | 3.3V Rail | — | Pin 1 & 17 |Power LLC LV, MCP3008 VDD/VREF, BME280, Rainfall, Wind Direction, Battery sensor (logic side), Flame sensor|
 | GND | — | Pin 6, 9, 14, 20, 25, 30, 34, 39 | Common ground |
@@ -52,7 +41,7 @@ Then add `dtoverlay=disable-bt` in `/boot/config.txt` and
 
 These two sensors are native I2C, directly to the Pi (**not via MCP3008/LLC**),
 and **share the same I2C bus** (SDA/SCL). This is safe because of the address I2C
-both BEDA — will not conflict with each other.
+are different, so they do not conflict.
 
 ### BME280 (ambient: temperature/humidity/pressure)
 | Pin BME280 |Connect to|
@@ -74,7 +63,7 @@ I2C address: `0x76` (or `0x77` depending on the module jumper soldering).
 
 I2C Address: `0x1D` (`RAINFALL_I2C_ADDRESS` at `config/settings.py`) —
 **different from BME280 (`0x76`/`0x77`)**, so parallel wiring on the I2C bus
-equally safe, no need for multiplexers.
+safe without an I2C multiplexer.
 
 ```bash
 i2cdetect -y 1     # TWO addresses should appear: 0x76 (BME280) and 0x1D (Rainfall)
@@ -89,52 +78,35 @@ python3 tests/test_rainfall.py
 | Pin MCP3008 |Connect to|Notes|
 |-------------|-----------|---------|
 | VDD (pin 16) | Pi 3.3V |**DO NOT 5V**|
-| VREF (pin 15) | Pi 3.3V | Skala ADC 0-3.3V = raw 0-1023 |
+| VREF (pin 15) | Pi 3.3V | ADC scale 0-3.3V = raw 0-1023 |
 | AGND (pin 14) | Common ground | |
 | CLK (pin 13)  | GPIO11 (SCLK) | |
 | DOUT (pin 12) | GPIO9 (MISO)  | |
 | DIN (pin 11)  | GPIO10 (MOSI) | |
 | CS/SHDN (pin 10) | GPIO8 (CE0) | |
 | DGND (pin 9)  | Common ground | |
-| CH1-CH4 |See §4 — via LLC| MQ-2, MQ-135, Soil Surface, Soil Deep |
-| CH5 |Pressure sensor, **directly without LLC**|Via R_BURDEN 100Ω|
-| CH6 |Battery/voltage sensor, **directly without LLC**|Native 3.3V signal|
-| CH7 |Flame sensor (AO), **directly without LLC**|Native 3.3V signal|
-| CH8 |*(spare, not wired)*|LLC only 4 channels, already full on CH1-4|
+| CH0–CH3 |See §4 — via LLC| MQ-2, MQ-135, Soil Surface, Soil Deep |
+| CH4 |Pressure sensor, **directly without LLC**|Via R_BURDEN 100Ω|
+| CH5 |Battery/voltage sensor, **directly without LLC**|Native 3.3V signal|
+| CH6 |Flame sensor (AO), **directly without LLC**|Native 3.3V signal|
+| CH7 |*(spare, not wired)*|LLC only 4 channels, already full on CH1-4|
 
 Verification: `ls /dev/spidev*` → should appear `/dev/spidev0.0`
 
 ---
 
-## 4. Peta Channel MCP3008 — Logic Level Converter (4-channel)
+## 4. MCP3008 channel map and logic-level converter
 
-LLC module used in this project: **"I2C Logic Level Converter" 4-channel,
-bi-directional, data level 3.3~5.0V** — designed for DIGITAL signals
-(I2C/UART/SPI between boards, e.g. Arduino↔Pi), NOT to translate
-linearly continuous analog voltage.
+The four-channel converter in this design is intended for digital signals. It does not translate a continuous analog voltage linearly.
 
-> ⚠️ **Limitations of REALIZED & ACCEPTED (user decision):** MQ-2,
-> MQ-135, and both soil probes remain wired via LLC even though the signal
-> analog, not digital. The consequence: reading of ADC on all 4 channels
-> potentially not completely linear/proporsional with respect to sensor voltage
-> actually (this type of level-shifter chip works with threshold detection
-> HIGH/LOW, not continuous voltage translation). This isn't a bug yet
-> discovered — this is a trade-off that has been consciously decided upon. If
-> Otherwise, readings from these four sensors will appear to jump instead of changing smoothly.
-> rather than physical changes to the sensor, this is the most likely cause
-> checked first.
->
-> Pressure, Battery, and Flame are deliberately EXCLUDED from this LLC (see
-> §5) — either because the signal is native 3.3V (Battery, Flame) or
-> because the burden resistor voltage is automatically within a safe range
-> without the need for step-down (Pressure).
+> **Calibration warning:** MQ-2, MQ-135, and both soil probes are currently routed through this converter. Their ADC readings may jump or distort instead of following the sensor voltage smoothly. Verify their behavior during calibration. The pressure, battery, and flame inputs bypass the converter because their outputs stay within the MCP3008's 3.3 V input range.
 
 | LLC |HV side (5V) ← of the sensor|LV side (3.3V) → to MCP3008| Channel |
 |-----|---------------------------|------------------------------|---------|
-| CH1 | MQ-2 **AOUT** | **MCP3008 CH1** | Smoke/gas analog |
-| CH2 | MQ-135 **AOUT** | **MCP3008 CH2** |Air quality analog|
-| CH3 | Soil Surface **AOUT** | **MCP3008 CH3** | Moisture at 0–30 cm |
-| CH4 | Soil Deep **AOUT** | **MCP3008 CH4** | Moisture at 30–60 cm |
+| CH1 | MQ-2 **AOUT** | **MCP3008 CH0** | Smoke/gas analog |
+| CH2 | MQ-135 **AOUT** | **MCP3008 CH1** |Air quality analog|
+| CH3 | Soil Surface **AOUT** | **MCP3008 CH2** | Moisture at 0–30 cm |
+| CH4 | Soil Deep **AOUT** | **MCP3008 CH3** | Moisture at 30–60 cm |
 
 *(The physical LLC module only has 4 channels — already fully used above. Pressure/
 Battery/Flame NOT via this module altogether, see §5.)*
@@ -151,14 +123,14 @@ LV pin ←── 3.3V (from Pi pin 1/17)
 
 ---
 
-## 5. Sensor per Sensor — Detail Wiring
+## 5. Sensor wiring details
 
 ### MQ-2 (Smoke / Combustible Gas)
 | Pin sensor |Connect to|
 |-----------|-----------|
 | VCC |5V (directly from the source, not from the Pi GPIO 5V)|
 | GND | Common ground |
-| AOUT | LLC **CH1** → MCP3008 **CH1** |
+| AOUT | LLC **CH1** → MCP3008 **CH0** |
 
 > Heater ~150mA — power directly from the buck converter, not from the Pi GPIO 5V.
 
@@ -167,21 +139,21 @@ LV pin ←── 3.3V (from Pi pin 1/17)
 |-----------|-----------|
 | VCC |5V (direct from source)|
 | GND | Common ground |
-| AOUT | LLC **CH2** → MCP3008 **CH2** |
+| AOUT | LLC **CH2** → MCP3008 **CH1** |
 
 ### Soil Moisture Probe — Surface (0-30cm)
 | Pin probe |Connect to|
 |----------|-----------|
 | VCC | 5V |
 | GND | Common ground |
-| AOUT | LLC **CH3** → MCP3008 **CH3** |
+| AOUT | LLC **CH3** → MCP3008 **CH2** |
 
 ### Soil Moisture Probe — Deep (30-60cm)
 | Pin probe |Connect to|
 |----------|-----------|
 | VCC | 5V |
 | GND | Common ground |
-| AOUT | LLC **CH4** → MCP3008 **CH4** |
+| AOUT | LLC **CH4** → MCP3008 **CH3** |
 
 > Mandatory calibration per probe (see `sensors/soil.py`): dry_raw in dry air, wet_raw submerged in water.
 
@@ -202,22 +174,22 @@ Sensor (variable 4–20 mA according to pressure/depth)
                                   ▼
                     ┌─────────────────────────┐
                     │  R_BURDEN = 100Ω        │
-                    │  (presisi, low-drift)   │
+                    │  (precision, low drift)   │
                     └────────────┬────────────┘
 │ tap at this point → 0.4-2.0V
                                  ▼
-DIRECT to MCP3008 CH5 (WITHOUT LLC)
+DIRECT to MCP3008 CH4 (WITHOUT LLC)
                                  │
                                  ▼
                       Common ground and PSU (−)
 ```
 
-| Titik |Connect to|
+| Connection point |Connect to|
 |-------|-----------|
 | Loop V+ |PSU 12-24V (+) — **not** from Pi/buck 5V converter|
 |Exit loop (after sensor)|Top end R_BURDEN (100Ω)|
 | Bottom end of R_BURDEN | Common ground and PSU (−) |
-| Titik sambung sensor/R_BURDEN |**DIRECT** to MCP3008 **CH5** (without LLC)|
+| Sensor/resistor junction |**DIRECT** to MCP3008 **CH4** (without LLC)|
 
 **Why 100 Ω?**
 - 4mA × 100Ω = **0.4V** → “empty” level (0m)
@@ -233,7 +205,7 @@ and `pressure` (bar, hydrostatic conversion).
 
 ### DC Voltage Sensor Module (Battery) — NOT via LLC
 
-This module already has an internal resistive voltage divider PASIF (ratio 1:5
+This module already has an internal resistive voltage divider passive (ratio 1:5
 fixed), no need to make it yourself. **Just like Pressure, this module is NOT
 wired via LLC** — the output signal is natively 3.3V (see notes
 at `sensors/battery.py`, reference: osoyoo.com/2024/09/08/lesson-13-voltage-
@@ -242,13 +214,13 @@ but that only applies if the ADC is given VREF 5V. In this project (MCP3008
 VREF 3.3V), **correct input safe limit is 16.5V** (3.3V x ratio 5) —
 Your battery (max 14.4V) is still below this limit with ~2.1V headroom, safe.
 
-This module has **5 connection points, on DUA different sides** — don't confuse them:
+This module has **5 connection points, on two different sides** — don't confuse them:
 
-|Module pins| Sisi |Connect to|
+| Module pins | Side |Connect to|
 |-----------|------|-----------|
 | **+** |Output/logic (to Pi)|3.3V Pi (Pin 1 or 17)|
 | **−** | Output/logic (to Pi) | Common ground |
-| **S** |Output/logic (to Pi)|**DIRECT** to MCP3008 **CH6** (without LLC)|
+| **S** |Output/logic (to Pi)|**DIRECT** to MCP3008 **CH5** (without LLC)|
 | **anode / IN+** |Input (measured)| Terminal Battery+ (12V LiFePO4/sejenis, max 14.4V) |
 | **cathode / IN−** |Input (measured)| Terminal Battery− |
 
@@ -262,7 +234,7 @@ already set to 14.4V** (confirmed). `BATTERY_MIN_V` (default 10.7V)
 |-----------|-----------|
 | VCC |As per module datasheet (usually 3.3-5V)|
 | GND | Common ground |
-| AO |**LIVE** to MCP3008 **CH7** (last channel, without LLC)|
+| AO | Directly to MCP3008 **CH6** (without LLC) |
 
 This module's AO signal is native 3.3V, no need for step-down. **Voltage threshold
 not calibrated to physical unit** (`FLAME_AO_THRESHOLD_V`, 1.65V placeholder)
@@ -286,10 +258,10 @@ Port `/dev/ttyUSB0`, Slave ID `2`, Baudrate `9600` — already default in
 
 | Cable | Connect to |
 |-------|-----------|
-| Merah (VCC) |3.3V (pin 1 or 17)|
-| Hitam (GND) | GND |
-| Kuning (TX sensor) | GPIO14 / pin 8 (RXD Pi) |
-| Hijau (RX sensor) | GPIO15 / pin 10 (TXD Pi) |
+| Red (VCC) |3.3V (pin 1 or 17)|
+| Black (GND) | GND |
+| Yellow (sensor TX) | GPIO14 / pin 8 (RXD Pi) |
+| Green (sensor RX) | GPIO15 / pin 10 (TXD Pi) |
 
 Protocol: text line `*<kode>#` via UART software `/dev/serial0`, code
 1-8 = N/NE/E/SE/S/SW/W/NW. Baudrate default 9600 (`EFWS_WIND_DIR_BAUD`).
@@ -317,8 +289,8 @@ No need for different wiring between the two — **just install one of the modul
 |---------|--------|
 |Power|Fits HAT board (usually 5V from Pi or separate 3.7-4.2V Li-ion)|
 | Data |USB to Pi — appears as multiple `/dev/ttyUSBx`|
-| Antena LTE |Must|
-| Antena GNSS |Must be separate|
+| LTE antenna |Must|
+| GNSS antenna |Must be separate|
 | SIM card |Install before power on|
 
 ```bash
@@ -341,42 +313,27 @@ GND ──────────────► GND relay Siren (−) ──�
 
 ---
 
-## 6. Complete Signal Block Diagram
+## 6. Signal path summary
 
-```
-MQ-2 AOUT (5V)      ──┐
-MQ-135 AOUT (5V) ──┤ LLC (1 module, 4 channels — ALL used)
-Soil-S AOUT (5V)    ──┤    CH1-4 (5V) → (3.3V)
-Soil-D AOUT (5V)    ──┘         │
-                                ▼
-                     MCP3008 CH1-CH4  (SPI0)
-                                │
-Pressure via R_BURDEN 100Ω (native 3.3V, WITHOUT LLC) ──► MCP3008 CH5 ──┤
-Battery Sensor S (native 3.3V, WITHOUT LLC) ──► MCP3008 CH6 ──┤
-Flame Sensor AO (native 3.3V, WITHOUT LLC) ──► MCP3008 CH7 ──┤
-                                                                       │
-BME280 (I2C, addr 0x76) ───────────────────────────────────────────┤
-Rainfall SEN0575 (I2C, addr 0x1D — same bus as BME280) ───────────┤
-RS485 Anemometer (USB, Slave ID 2) ─────────────────────────────────┤
-Wind Direction (UART GPIO14/15) ────────────────────────────────────┤
-A7670E / SIM7600 (USB) ──────────────────────────────────────────────┤
-                                ▼
-                       Raspberry Pi 4 — main.py
-1) read all sensors
-2) SAVE to SQLite first (sensor_readings)
-3) local evaluation → siren (real-time, not saved)
-4) try sending to API — failed? enter queue (api_queue)
-5) check signal again every 2 minutes → auto-flush queue
-                                │ GPIO27
-                                ▼
-5V Relay ──► 12V Siren
-```
+| Device | Path to Raspberry Pi |
+| --- | --- |
+| MQ-2, MQ-135, surface and deep soil probes | Analog output → four-channel level converter → MCP3008 CH0–CH3 → SPI |
+| Submersible pressure sensor | 4–20 mA loop → 100 Ω burden resistor → MCP3008 CH4 → SPI |
+| Battery voltage sensor | Sensor output → MCP3008 CH5 → SPI |
+| Flame sensor | Analog output → MCP3008 CH6 → SPI |
+| BME280 and SEN0575 rainfall sensor | Shared I2C bus, addresses 0x76/0x77 and 0x1D |
+| RS485 anemometer | USB-RS485 converter |
+| Wind direction sensor | UART on GPIO14/15 |
+| A7670E or SIM7600 modem | USB |
+| Siren | GPIO27 → relay control; 12 V battery bus → relay contacts → siren |
+
+The main loop evaluates alarms locally. The telemetry publisher saves a reading to SQLite before sending it to the API. See [Architecture.md](Architecture.md) for the runtime flow.
 
 ---
 
 ## 7. Power Supply for Each Load
 
-| Beban |Voltage|Source|Notes|
+| Load |Voltage|Source|Notes|
 |-------|---------|--------|---------|
 | Raspberry Pi 4 | 5V | Buck converter output |Via GPIO pin 2/4 or USB-C|
 | MCP3008 VDD/VREF | 3.3V | Pi 3.3V rail | |
@@ -386,9 +343,9 @@ A7670E / SIM7600 (USB) ───────────────────
 | LLC HV | 5V | Buck converter / Pi 5V rail |Only for 4 channels: MQ-2/MQ-135/Soil x2|
 |MQ-2 / MQ-135 heaters| 5V |Direct buck converter|~150mA each|
 | Soil probe ×2 |5V or 3.3V|According to the probe datasheet| |
-| Submersible pressure sensor | 12-24V (loop) |**PSU is separate**, not from Pi/buck 5V|Loop-powered, R_BURDEN 100Ω, direct to CH5|
-|Voltage sensor module (battery)|Measuring side: passive, tap Battery+/−. Logic side ("+"/"−"): **3.3V from Pi**|Pi 3.3V rail (for its "+"/"−" logic pins)|**NOT no supply** — mandatory "+"/"−" pins to 3.3V/GND Pi, direct to CH6|
-| Flame sensor |3.3-5V according to datasheet|According to the module datasheet|AO native 3.3V, direct to CH7|
+| Submersible pressure sensor | 12-24V (loop) |**PSU is separate**, not from Pi/buck 5V|Loop-powered, R_BURDEN 100Ω, direct to CH4|
+|Voltage sensor module (battery)|Measuring side: passive, tap Battery+/−. Logic side ("+"/"−"): **3.3V from Pi**|Pi 3.3V rail (for its "+"/"−" logic pins)|**NOT no supply** — mandatory "+"/"−" pins to 3.3V/GND Pi, direct to CH5|
+| Flame sensor |3.3-5V according to datasheet|According to the module datasheet|AO native 3.3V, direct to CH6|
 | RS485 anemometer |12V or 5V|According to the unit datasheet| Slave ID 2, Baudrate 9600 |
 | A7670E/SIM7600 |5V or 3.7-4.2V|Fits HAT board| |
 |Relay coils| 5V | Pi 5V rail | |
@@ -402,13 +359,13 @@ A7670E / SIM7600 (USB) ───────────────────
 [ ] SPI active (raspi-config → Interface → SPI)
 [ ] I2C active (raspi-config → Interface → I2C)
 [ ] Common ground: Pi, MCP3008, LLC, all sensors, relays, PSU pressure sensor → one GND
-[ ] LLC: HV=5V, LV=3.3V, ONLY 4 channels used (CH1-CH4: MQ-2/MQ-135/Soil x2)
+[ ] LLC: HV=5V, LV=3.3V, ONLY 4 channels used (LLC CH1–CH4: MQ-2/MQ-135/Soil x2)
 [ ] MCP3008 VDD & VREF to 3.3V (not 5V)
-[ ] MCP3008 CH8 intentionally empty (spare)
-[ ] R_BURDEN 100Ω is installed correctly in the loop pressure sensor, tap DIRECTLY to MCP3008 CH5 (WITHOUT LLC)
+[ ] MCP3008 CH7 intentionally empty (spare)
+[ ] R_BURDEN 100Ω is installed correctly in the loop pressure sensor, tap DIRECTLY to MCP3008 CH4 (WITHOUT LLC)
 [ ] PSU loop pressure sensor separate from Pi/buck 5V converter
-[ ] Voltage sensor module: measuring side (anode/cathode) taps directly to Battery+/− (not via relay); logic side ("+"/"−") to 3.3V/GND Pi; "S" DIRECTLY to MCP3008 CH6 (WITHOUT LLC)
-[ ] Flame sensor AO DIRECTLY to MCP3008 CH7 (WITHOUT LLC) — threshold has NOT been calibrated, check sensors/flame.py before deploy
+[ ] Voltage sensor module: measuring side (anode/cathode) taps directly to Battery+/− (not via relay); logic side ("+"/"−") to 3.3V/GND Pi; "S" DIRECTLY to MCP3008 CH5 (WITHOUT LLC)
+[ ] Flame sensor AO DIRECTLY to MCP3008 CH6 (WITHOUT LLC) — threshold has NOT been calibrated, check sensors/flame.py before deploy
 [ ] BME280 (addr 0x76) and Rainfall SEN0575 (addr 0x1D) share the same bus I2C — different addresses, safe
 [ ] The 12V siren line only goes through relay COM/NO, does not touch the Pi
 [ ] Only ONE module installed: A7670E OR SIM7600 (not both)
