@@ -2,19 +2,13 @@
 
 Follow this guide to install and run EFWS as a systemd service on a Raspberry Pi.
 
-**Hardware required:**
-Raspberry Pi 3 Model B+ / 4, MicroSD 32 GB, MCP3008 (SPI ADC), Logic Level Converter 4-ch,
-MQ-2, MQ-135, BME280 (I2C), Rainfall Sensor DFRobot SEN0575 (I2C),
-2× Soil Moisture Probe, Submersible Pressure Sensor (4-20 mA), Flame Sensor (IR AO),
-Voltage Sensor Module DC 0–25 V (battery), RS485 Anemometer + USB-RS485 Converter,
-Wind Direction JL-FSX2 (UART GPIO14/15), **SIM7600 4G HAT** (Waveshare, Telkomsel SIM card),
-Relay 5 V 1-ch, Siren 12 V.
-Power supply system: Solar Panel 100 W, SCC 20 A, LiFePO4 12 V, Buck Converter.
+**Route through this guide:** [Wire hardware](#stage-0--physical-wiring) → [prepare the OS](#stage-2--os-setup-once-only) → [configure EFWS](#stage-4--configuration-env) → [test 4G](#stage-5--4g-connection-setup-gsm-connectservice) → [test sensors](#stage-7--test-each-sensor-important-sequence-hardware-mode) → [start services](#stage-9--install-all-services-production).
 
-**Flat** project structure — `main.py` is directly at the root, parallel to
-`venv/`, `.env`, `scripts/`, `logs/`, `database/`.
+Before starting, assemble the hardware listed in [SensorSpecification.md](SensorSpecification.md) and [PowerSystem.md](PowerSystem.md). This guide assumes a Raspberry Pi 4, a 32 GB microSD card, the documented sensor set, one 4G modem, a 5 V relay, a 12 V siren, and the solar battery system. The SIM7600 instructions use a Waveshare HAT and a Telkomsel SIM as examples; adjust the APN and modem details for your hardware.
 
-**Services running on the Raspberry Pi:**
+Keep the project layout flat: `main.py`, `.env`, `scripts/`, `logs/`, and `database/` belong in the same project root. The virtual environment is created there as `venv/`.
+
+The Raspberry Pi runs these services:
 - `gsm-connect.service` — 4G connection + GPS fetch (run first, once at boot)
 - `efws.service` — main application EFWS (start after gsm-connect is complete)
 - `ews-gps-refresh.timer` — refreshes GPS every 30 minutes in background
@@ -23,19 +17,17 @@ Power supply system: Solar Panel 100 W, SCC 20 A, LiFePO4 12 V, Buck Converter.
 
 ## STAGE 0 — Physical wiring
 
-**Read first** [`docs/Pinout.md`](Pinout.md) and [`docs/PowerSystem.md`](PowerSystem.md)
-before connecting anything. Pay special attention:
+Read the [pinout](Pinout.md) and [power guide](PowerSystem.md) before connecting anything. Pay particular attention to these points:
 
-- **5 V** analog signals from MQ-2, MQ-135, and Soil Probe **required** via Logic Level Converter
-  before entering MCP3008 (VREF 3.3 V) — without LLC, ADC could be damaged.
+- The MCP3008 uses a **3.3 V reference**. Never connect a 5 V analog output directly to it. The original design routes MQ-2, MQ-135, and soil probe outputs through a four-channel logic-level converter, but that digital converter can distort analog values. Verify the interface and calibrate the readings before deployment.
 - Battery voltage sensor and Flame Sensor AO directly to MCP3008 **without LLC**
   (already native 3.3 V).
-- 12V Siren **requires** via Relay Module — must not be powered from GPIO directly.
+- Power the 12 V siren through the relay contacts, never from a GPIO pin.
 - Wind Direction JL-FSX2 requires kernel prerequisites (see STAGE 2).
 - The 4-20 mA pressure sensor requires a separate 12 V PSU for the loop and a 100 Ω burden resistor.
-- SIM7600 HAT: install via USB data to Raspberry Pi, antenna LTE and antenna GNSS **both must** be installed.
+- Connect the SIM7600 HAT to the Pi with a USB data cable and install both LTE and GNSS antennas.
 
-Once the wiring is installed: **don't run the code right away** — go to STEP 2 first.
+After wiring, complete the operating system setup before running the application.
 
 ---
 
@@ -65,7 +57,7 @@ sudo apt update && sudo apt install -y \
     i2c-tools \
     usb-modeswitch modemmanager \
     network-manager \
-    git awk
+    git
 ```
 
 > `network-manager` and `modemmanager` are **required** for SIM7600 connection via nmcli.
@@ -99,9 +91,7 @@ sudo reboot
 
 ### 2d. Enable full UART for Wind Direction (JL-FSX2)
 
-Wind Direction Sensor uses GPIO14/GPIO15 (UART). On RPi by default,
-GPIO14/15 is connected to **mini-UART** whose clock is unstable.
-Bluetooth also occupies the full PL011 UART.
+The wind direction sensor uses GPIO14/GPIO15 (UART). On a Raspberry Pi 4, the default serial configuration can leave these pins on the clock-sensitive mini-UART while Bluetooth uses the PL011 UART.
 
 ```bash
 # Add to /boot/config.txt (or /boot/firmware/config.txt in Bookworm):
@@ -114,7 +104,7 @@ sudo systemctl disable hciuart
 sudo reboot
 ```
 
-After rebooting, `/dev/serial0` will connect to **PL011 UART full** (stable baudrate).
+After rebooting, `/dev/serial0` should point to the PL011 UART with a stable baud rate.
 
 ### 2e. Add the user to the hardware group
 
@@ -128,17 +118,17 @@ sudo reboot
 
 ```bash
 lsusb                    # should appear: SIMCom or Qualcomm (SIM7600)
-ls /dev/ttyUSB*          # should be: /dev/ttyUSB0 through /dev/ttyUSB3 (SIM7600) + ttyUSB4/5 (RS485)
+ls /dev/ttyUSB*          # SIM7600 commonly exposes ttyUSB0–ttyUSB3; RS485 port number may vary
 ls /dev/spidev*          # should be: /dev/spidev0.0 (MCP3008)
 i2cdetect -y 1           # should be: 0x76 (BME280) AND 0x1D (Rainfall SEN0575)
-ls /dev/serial0          # there must be (Wind Direction UART)
+ls /dev/serial0          # should exist for the wind direction sensor
 ```
 
 > Port SIM7600 (Waveshare HAT):
 > - `ttyUSB0` = DM (diagnostic), `ttyUSB1` = AT secondary, `ttyUSB2` = **AT command** ← used script
 > - `ttyUSB3` = PPP/modem (do not use together with nmcli)
 >
-> If either does not appear: stop, check wiring and `raspi-config` before continuing.
+> If an expected device is missing, check its wiring and the interface settings in `raspi-config` before continuing.
 
 ---
 
@@ -161,7 +151,7 @@ cp .env.example .env
 nano .env
 ```
 
-### Required before running anything:
+### Required settings
 
 ```ini
 # Device identity (unique per unit in the field)
@@ -185,7 +175,7 @@ EFWS_LON=106.8208
 EFWS_APN=internet
 ```
 
-### Env var interval (default value is the same, change only if necessary):
+### Intervals (optional defaults)
 
 ```ini
 EFWS_READ_INTERVAL=180              # sensor sampling every 3 minutes
@@ -196,7 +186,7 @@ EFWS_HEARTBEAT_INTERVAL_SEC=300     # heartbeat every 5 minutes (always constant
 EFWS_CONNECTIVITY_CHECK_SEC=120     # Retry offline queue every 2 minutes
 ```
 
-### Env var SIM7600 (optional — default is correct for Waveshare HAT):
+### SIM7600 settings (optional Waveshare HAT defaults)
 
 ```ini
 # EFWS_SIM_PORT=/dev/ttyUSB2    # AT command port SIM7600 (default: ttyUSB2)
@@ -208,7 +198,7 @@ EFWS_CONNECTIVITY_CHECK_SEC=120     # Retry offline queue every 2 minutes
 
 ## STAGE 5 — 4G connection setup (gsm-connect.service)
 
-This is the **most important step** — without a 4G connection, data cannot be sent to the API.
+Complete the 4G connection before testing API delivery.
 
 ### 5a. Install services and scripts
 
@@ -233,7 +223,7 @@ sudo systemctl daemon-reload
 sudo bash /home/uwfadmin/ews/scripts/ews_network_setup.sh
 ```
 
-Pantau output:
+Check the script output:
 ```
 [1/8] Check ModemManager & NetworkManager...
 [2/8] Enable WWAN radio...
@@ -255,7 +245,7 @@ nmcli device status
 
 # Check the default route via modem (not WiFi)
 ip route get 8.8.8.8
-# Must: dev wwan0 or cdc-wdm0 (not wlan0)
+# Expect: dev wwan0 or another modem interface (not wlan0)
 
 # Check IP obtained
 ip addr show wwan0   # or cdc-wdm0
@@ -266,7 +256,7 @@ ping -c 4 8.8.8.8
 # Check cache GPS (takes a few minutes)
 cat /tmp/ews_gps_cache.json
 # If fixed: {"fix":true,"lat":-6.xxx,"lon":106.xxx,...}
-# If not fixed: {"fix":false,...} — normal, wait for antenna GNSS in outdoor
+# If not fixed: {"fix":false,...} — move the GNSS antenna outdoors and wait
 ```
 
 ### 5c. If the route is still via WiFi (troubleshoot metric)
@@ -277,7 +267,7 @@ ip route show
 
 # Force the 4G metric to be smaller than WiFi
 sudo nmcli connection modify "EWS-4G" ipv4.route-metric 50
-sudo nmcli connection modify "NAMA_WIFI_ANDA" ipv4.route-metric 600
+sudo nmcli connection modify "<your-wifi-profile>" ipv4.route-metric 600
 sudo nmcli connection up "EWS-4G"
 ```
 
@@ -305,8 +295,7 @@ source venv/bin/activate
 python3 tests/test_webhook_api.py
 ```
 
-Go to the webhook.site page — one POST JSON should appear live. If successful:
-path Pi → 4G → internet → API is proven to work.
+Check the webhook.site page for a JSON POST. Its arrival confirms that the Pi can reach the test endpoint over the active network connection.
 
 > No internet connection yet? Run `tools/mock_api_server.py` on the laptop (one
 > Wi-Fi network with the Pi), then set `EFWS_API_URL=http://<ip-laptop>:5000`.
@@ -315,17 +304,17 @@ path Pi → 4G → internet → API is proven to work.
 
 ## STAGE 7 — Test each sensor (IMPORTANT SEQUENCE, hardware mode)
 
-Change it first in `.env`:
+First change `.env`:
 ```ini
 EFWS_RUN_MODE=hardware
 ```
 
-Run **in order** — if one fails, finish it first before continuing:
+Run the tests **in order**. Resolve a failed test before proceeding.
 
 ```bash
 source venv/bin/activate
 
-#1. MCP3008 — the foundation of all analog sensors
+# 1. MCP3008 — foundation for the analog sensors
 python3 tests/test_mcp3008.py
 
 # 2. MQ-2 & MQ-135 (analog via MCP3008 + LLC)
@@ -365,8 +354,7 @@ python3 tests/test_all_sensors.py
 python3 tests/test_offline_queue_integrity.py
 ```
 
-> **SIM7600 does not need to be tested separately** — GPS is fully handled by `ews_network_setup.sh`
-> and read `main.py` from the cache file. Check via: `cat /tmp/ews_gps_cache.json`
+> The network setup script handles the SIM7600 and writes the GPS cache. `main.py` reads that cache. Check it with `cat /tmp/ews_gps_cache.json`.
 
 ---
 
@@ -385,7 +373,7 @@ Observe several cycles (default every 3 minutes). Make sure:
   or `GPS cache missing / fix=false` (if GPS has no fix), then uses configured coordinates
 - `[Heartbeat Publisher]` appears every 5 minutes
 
-Press `Ctrl+C` to stop. EFWS shutdown gracefully (siren turned off, connection closed).
+Press `Ctrl+C` to stop. EFWS shuts down gracefully, turning off the siren and closing connections.
 
 ---
 
@@ -424,7 +412,7 @@ sudo systemctl start efws
 ```
 
 > After this, when the Raspberry Pi **reboots**, `gsm-connect` automatically starts first,
-> `efws` waits for `gsm-connect` to finish, then start.
+> `efws` waits for `gsm-connect` to finish, then starts.
 > This is guaranteed by `After=gsm-connect.service` and `Requires=gsm-connect.service`
 > at `efws.service`.
 
@@ -438,8 +426,8 @@ systemctl list-timers ews-gps*       # status timer GPS refresh
 
 # ── Log real-time ────────────────────────────────────────────────────
 sudo journalctl -u efws -f            # log EFWS (Ctrl+C just stops monitoring, service still running)
-sudo journalctl -u ews-gsm -f         # log network setup
-sudo journalctl -u ews-gps -f         # log GPS refresh
+sudo journalctl -u gsm-connect -f     # log network setup
+sudo journalctl -u ews-gps-refresh -f # log GPS refresh
 tail -f /home/uwfadmin/ews/logs/network_setup.log  # network logs (more details)
 tail -f /home/uwfadmin/ews/logs/gps_refresh.log    # log GPS refresh
 tail -f /home/uwfadmin/ews/logs/efws.log           # log EFWS (timestamp ms)
@@ -449,8 +437,8 @@ sudo systemctl restart efws
 
 # ── GPS manual check ──────────────────────── ─────────────────────────
 cat /tmp/ews_gps_cache.json           # see the last position of GPS
-sudo bash /home/uwfadmin/ews/scripts/gps_refresh.sh  # paksa refresh GPS
-sudo journalctl -u ews-gps -n 30      # view log GPS last refresh
+sudo bash /home/uwfadmin/ews/scripts/gps_refresh.sh  # force a GPS refresh
+sudo journalctl -u ews-gps-refresh -n 30 # recent GPS refresh logs
 
 # ── Complete connection diagnostics ──────────────────── ────────────────────
 sudo bash /home/uwfadmin/ews/scripts/check_comm.sh
@@ -471,9 +459,7 @@ chmod +x scripts/efws_ctl.sh
 
 ## STAGE 10 — Reboot command permission setup
 
-The backend can send the command `Reboot` via heartbeat response. EFWS
-execute it with `sudo systemctl restart efws.service` from the child process.
-So that this can work **without a sudo password**, add a sudoers rule:
+The backend can send a `Reboot` command in a heartbeat response. EFWS handles it by running `sudo systemctl restart efws.service` from a child process. Add this narrowly scoped sudoers rule so the service can run that command without an interactive password:
 
 ```bash
 sudo visudo -f /etc/sudoers.d/efws
@@ -490,13 +476,20 @@ uwfadmin ALL=(root) NOPASSWD: /usr/bin/systemctl restart efws.service
 
 ## STAGE 11 — Move to production API
 
-Once prototyping with webhook.site is complete and the original backend is ready:
+When the production backend is ready, replace the test endpoint in `.env`:
 
 ```bash
 nano .env
-#EFWS_API_URL=https://your-api.example/v1
-# EFWS_API_KEY=token_from_backend
+```
 
+Set the following values inside the file:
+
+```ini
+EFWS_API_URL=https://your-api.example/v1
+EFWS_API_KEY=token_from_backend
+```
+
+```bash
 sudo systemctl restart efws
 ```
 
@@ -514,7 +507,7 @@ Verify in the log that `[Telemetry Publisher]` sends to the new URL and
 | `mmcli -L` → `No modems were found` |SIM7600 not detected USB|`lsusb` + `ls /dev/ttyUSB*`; check data cable USB; press the modem button PWRKEY; replace port USB|
 | `cdc-wdm0 gsm disconnected` |The modem is detected but the connection is not active|`sudo nmcli connection up EWS-4G` or `sudo systemctl restart gsm-connect`|
 |Route still via `wlan0` (WiFi)|The route metric is incorrect|`ip route show` → make sure EWS-4G metric 50, WiFi metric 600; run `sudo nmcli connection up EWS-4G`|
-| `gsm-connect` status `failed` | Script error |`journalctl -u ews-gsm -n 50`; check `tail -f logs/network_setup.log`|
+| `gsm-connect` status `failed` | Script error |`journalctl -u gsm-connect -n 50`; check `tail -f logs/network_setup.log`|
 |There is no IP on `wwan0`|APN is incorrect or the modem has not been registered|Check operator code: `mmcli -m 0\|grep operator-code`; adjust the APN in `.env`|
 
 ### GPS
@@ -536,7 +529,7 @@ Verify in the log that `[Telemetry Publisher]` sends to the new URL and
 | MQ-2/MQ-135 |ppm doesn't make sense|The sensor needs 24–48 hours of preheat for full accuracy|
 | BME280 |`i2cdetect -y 1` is empty|I2C is not active yet; SDA/SCL reversed; try `EFWS_BME280_ADDR=0x77`|
 | Rainfall SEN0575 |`RuntimeError: PID/VID mismatch`|Sensor not installed / incorrect I2C address (`0x1D`); I2C is not active yet|
-| Soil Probe |`moisture_percent` is always 0% aor 100%|Need calibration `dry_raw`/`wet_raw` on `sensors/soil.py`|
+| Soil Probe |`moisture_percent` is always 0% or 100%|Calibrate `dry_raw` and `wet_raw` in `sensors/soil.py`|
 | Flame Sensor |`flame_detected` is always True/False|Threshold `EFWS_FLAME_AO_THRESHOLD_V` has not been calibrated; see `python sensors/flame.py`|
 | Pressure Sensor | `fault_open_loop=True`, `current_ma≈0` |4-20 mA loop breaks; PSU 12 V loop is not on; The burden resistor is not installed|
 | Battery Sensor |`voltage`/`percent` is incorrect|`EFWS_BATTERY_SENSOR_MAX_V` (default 16.5V) or `EFWS_BATTERY_MAX_V`/`MIN_V` need to be customized|
@@ -570,7 +563,7 @@ sudo bash scripts/check_comm.sh # complete diagnostics (modem + connection + GPS
 cat /tmp/ews_gps_cache.json           # cache GPS (written by ews_network_setup / gps_refresh)
 sudo bash scripts/gps_refresh.sh      # force a GPS refresh now
 systemctl list-timers ews-gps*        # inspect the GPS refresh timer (last and next run)
-journalctl -u ews-gps -n 40          # log GPS last refresh
+journalctl -u ews-gps-refresh -n 40  # recent GPS refresh logs
 
 # ── EFWS ─────────────────────────────────────────────────────────────
 sudo journalctl -u efws -f            # log real-time

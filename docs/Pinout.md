@@ -2,11 +2,13 @@
 
 This guide maps the Raspberry Pi GPIO pins, MCP3008 inputs, sensors, modem, relay, and siren. Check the [power guide](PowerSystem.md) before wiring and the [sensor specifications](SensorSpecification.md) for device ratings.
 
-EFWS uses one relay and one siren. The local alarm controller pulses the relay for warnings and holds it on for critical alarms. The backend handles the authoritative alarm evaluation.
+EFWS uses one relay and one siren. The local alarm controller pulses the relay for warnings and holds it on for critical alarms. The backend maintains the authoritative alarm record.
+
+> **Corrections from the Indonesian source:** MCP3008 inputs are numbered CH0–CH7 in `config/settings.py`; the source guide labels several of them one higher. The source also reverses the Pi's UART TX/RX labels. This guide follows the application channel settings and the [Raspberry Pi UART pinout](https://www.raspberrypi.com/documentation/computers/configuration.html#primary-and-secondary-uarts). Verify wiring before powering the unit.
 
 ---
 
-## 1. Raspberry Pi 4 — Pins Used (BCM Numbering)
+## 1. Raspberry Pi 4 pins (BCM numbering)
 
 |Function| GPIO (BCM) |Physical Pins|Information|
 |--------|-----------|-----------|------------|
@@ -16,8 +18,8 @@ EFWS uses one relay and one siren. The local alarm controller pulses the relay f
 | SPI CE0  (MCP3008) | GPIO8  | Pin 24 | Chip Select |
 | I2C SDA (BME280 + Rainfall) | GPIO2  | Pin 3  |Data I2C, bus shared|
 | I2C SCL (BME280 + Rainfall) | GPIO3  | Pin 5  |Clock I2C, bus is shared|
-| UART RXD (Wind Direction) | GPIO14 | Pin 8  |Receive from TX sensor (yellow)|
-| UART TXD (Wind Direction) | GPIO15 | Pin 10 |Send to RX sensor (green) — rarely used, this sensor is one-way|
+| UART TXD (Wind Direction) | GPIO14 | Pin 8 | Send to the sensor's RX (green; rarely used) |
+| UART RXD (Wind Direction) | GPIO15 | Pin 10 | Receive from the sensor's TX (yellow) |
 |Siren Relay (output)| GPIO27 | Pin 13 |To IN relay 5V|
 | Status LED (output, optional) | GPIO23 | Pin 16 | Heartbeat indicator |
 | 5V Rail | — | Pin 2 & 4 |Power LLC HV (not from here if the current is large)|
@@ -25,6 +27,7 @@ EFWS uses one relay and one siren. The local alarm controller pulses the relay f
 | GND | — | Pin 6, 9, 14, 20, 25, 30, 34, 39 | Common ground |
 
 Enable the interfaces:
+
 ```bash
 sudo raspi-config
 # Interface Options → SPI → Yes
@@ -32,18 +35,16 @@ sudo raspi-config
 # Interface Options → Serial Port → login shell via serial: No, hardware serial: Yes
 ```
 Then add `dtoverlay=disable-bt` in `/boot/config.txt` and
-`sudo systemctl disable hciuart` — details & reasons in section
-"Wind Direction" in §5 below.
+`sudo systemctl disable hciuart`. The wind direction section below explains why.
 
 ---
 
-## 2. BME280 & Rainfall Sensor — Wiring I2C (bus shared)
+## 2. BME280 and rainfall sensor (shared I2C bus)
 
-These two sensors are native I2C, directly to the Pi (**not via MCP3008/LLC**),
-and **share the same I2C bus** (SDA/SCL). This is safe because of the address I2C
-are different, so they do not conflict.
+Both sensors connect directly to the Pi's I2C bus, without the MCP3008 or level converter. They share SDA and SCL but use different addresses.
 
-### BME280 (ambient: temperature/humidity/pressure)
+### BME280 (ambient temperature, humidity, and pressure)
+
 | Pin BME280 |Connect to|
 |-----------|-----------|
 | VIN | Pi 3.3V |
@@ -53,7 +54,8 @@ are different, so they do not conflict.
 
 I2C address: `0x76` (or `0x77` depending on the module jumper soldering).
 
-### DFRobot Gravity Rainfall Sensor (SEN0575) — Tipping Bucket
+### DFRobot Gravity rainfall sensor (SEN0575)
+
 | Pin sensor |Connect to|
 |-----------|-----------|
 | VCC | Pi 3.3V |
@@ -61,9 +63,7 @@ I2C address: `0x76` (or `0x77` depending on the module jumper soldering).
 | SCL |GPIO3 (Pin 5) — **same as BME280**|
 | SDA |GPIO2 (Pin 3) — **same as BME280**|
 
-I2C Address: `0x1D` (`RAINFALL_I2C_ADDRESS` at `config/settings.py`) —
-**different from BME280 (`0x76`/`0x77`)**, so parallel wiring on the I2C bus
-safe without an I2C multiplexer.
+The rainfall sensor uses address `0x1D` (`RAINFALL_I2C_ADDRESS` in `config/settings.py`). The BME280 uses `0x76` or `0x77`, so no I2C multiplexer is needed.
 
 ```bash
 i2cdetect -y 1     # TWO addresses should appear: 0x76 (BME280) and 0x1D (Rainfall)
@@ -73,7 +73,7 @@ python3 tests/test_rainfall.py
 
 ---
 
-## 3. MCP3008 — Wiring to Raspberry Pi
+## 3. MCP3008 wiring
 
 | Pin MCP3008 |Connect to|Notes|
 |-------------|-----------|---------|
@@ -89,7 +89,7 @@ python3 tests/test_rainfall.py
 | CH4 |Pressure sensor, **directly without LLC**|Via R_BURDEN 100Ω|
 | CH5 |Battery/voltage sensor, **directly without LLC**|Native 3.3V signal|
 | CH6 |Flame sensor (AO), **directly without LLC**|Native 3.3V signal|
-| CH7 |*(spare, not wired)*|LLC only 4 channels, already full on CH1-4|
+| CH7 | Spare; not wired | The level converter's four channels are used on CH0–CH3 |
 
 Verification: `ls /dev/spidev*` → should appear `/dev/spidev0.0`
 
@@ -97,21 +97,20 @@ Verification: `ls /dev/spidev*` → should appear `/dev/spidev0.0`
 
 ## 4. MCP3008 channel map and logic-level converter
 
-The four-channel converter in this design is intended for digital signals. It does not translate a continuous analog voltage linearly.
+The four-channel level converter in the original design is intended for digital signals. It does not translate a continuous analog voltage linearly.
 
 > **Calibration warning:** MQ-2, MQ-135, and both soil probes are currently routed through this converter. Their ADC readings may jump or distort instead of following the sensor voltage smoothly. Verify their behavior during calibration. The pressure, battery, and flame inputs bypass the converter because their outputs stay within the MCP3008's 3.3 V input range.
 
-| LLC |HV side (5V) ← of the sensor|LV side (3.3V) → to MCP3008| Channel |
+| LLC channel | Sensor side (5 V) | MCP3008 side (3.3 V) | Signal |
 |-----|---------------------------|------------------------------|---------|
 | CH1 | MQ-2 **AOUT** | **MCP3008 CH0** | Smoke/gas analog |
 | CH2 | MQ-135 **AOUT** | **MCP3008 CH1** |Air quality analog|
 | CH3 | Soil Surface **AOUT** | **MCP3008 CH2** | Moisture at 0–30 cm |
 | CH4 | Soil Deep **AOUT** | **MCP3008 CH3** | Moisture at 30–60 cm |
 
-*(The physical LLC module only has 4 channels — already fully used above. Pressure/
-Battery/Flame NOT via this module altogether, see §5.)*
+All four converter channels are assigned. The pressure, battery, and flame signals bypass it, as described below.
 
-### Wiring module LLC
+### Level converter power connections
 
 ```
 LLC:
@@ -157,32 +156,16 @@ LV pin ←── 3.3V (from Pi pin 1/17)
 
 > Mandatory calibration per probe (see `sensors/soil.py`): dry_raw in dry air, wet_raw submerged in water.
 
-### Submersible Pressure Sensor — 4-20mA loop (Water Level) — NOT via LLC
+### Submersible pressure sensor — 4–20 mA loop, direct to ADC
 
-This sensor is **2-wire loop-powered** (not direct 0-5V), so the wiring is different
-of the 4 analog sensors above: need **burden resistor** to change the current
-loop becomes a readable voltage ADC. With R_BURDEN **100Ω**
-(`PRESSURE_BURDEN_OHM` in `config/settings.py`), the resulting voltage
-is automatically in the safe range 0-3.3V — **no need for LLC at all**,
-go straight to MCP3008.
+This two-wire sensor produces a 4–20 mA current loop. A 100 Ω burden resistor (`PRESSURE_BURDEN_OHM` in `config/settings.py`) converts that current to 0.4–2.0 V, within the MCP3008's 3.3 V input range. Connect the resistor junction directly to CH4; do not route it through the level converter.
 
-```
-PSU 12-24V (+) ──────────► Sensor Loop V+
-                                  │
-Sensor (variable 4–20 mA according to pressure/depth)
-                                  │
-                                  ▼
-                    ┌─────────────────────────┐
-                    │  R_BURDEN = 100Ω        │
-                    │  (precision, low drift)   │
-                    └────────────┬────────────┘
-│ tap at this point → 0.4-2.0V
-                                 ▼
-DIRECT to MCP3008 CH4 (WITHOUT LLC)
-                                 │
-                                 ▼
-                      Common ground and PSU (−)
-```
+| Connection | Wire to |
+| --- | --- |
+| 12–24 V loop supply (+) | Sensor loop V+ |
+| Sensor loop return | Top of the 100 Ω burden resistor |
+| Burden resistor top | MCP3008 CH4 (0.4–2.0 V) |
+| Burden resistor bottom | Common ground and loop supply (−) |
 
 | Connection point |Connect to|
 |-------|-----------|
@@ -195,24 +178,16 @@ DIRECT to MCP3008 CH4 (WITHOUT LLC)
 - 4mA × 100Ω = **0.4V** → “empty” level (0m)
 - 20mA × 100Ω = **2.0V** → “full” level (`PRESSURE_RANGE_M`, default 3m — adjust your sensor datasheet)
 
-This 0.4-2.0V range is far below VREF (3.3V), so it is safe to read
-straight away without any level-shifting.
+The 0.4–2.0 V signal stays below the 3.3 V reference throughout the 4–20 mA range.
 
 The conversion formula is in `sensors/pressure.py`. **Customize** `EFWS_PRESSURE_RANGE_M`
 in `.env` with the depth/pressure range of your physical sensor (many variants: 0–3 m,
-0-5m, 0-10m). Payload API sends two values ​​from this sensor: `waterLevel` (meters)
+0–5 m, 0–10 m). The API payload sends `waterLevel` (meters)
 and `pressure` (bar, hydrostatic conversion).
 
-### DC Voltage Sensor Module (Battery) — NOT via LLC
+### DC voltage sensor module (battery) — direct to ADC
 
-This module already has an internal resistive voltage divider passive (ratio 1:5
-fixed), no need to make it yourself. **Just like Pressure, this module is NOT
-wired via LLC** — the output signal is natively 3.3V (see notes
-at `sensors/battery.py`, reference: osoyoo.com/2024/09/08/lesson-13-voltage-
-sensor-for-raspberry-pi/). The manufacturer's rating for this module is often written as "0-25V",
-but that only applies if the ADC is given VREF 5V. In this project (MCP3008
-VREF 3.3V), **correct input safe limit is 16.5V** (3.3V x ratio 5) —
-Your battery (max 14.4V) is still below this limit with ~2.1V headroom, safe.
+The module contains a fixed 1:5 resistor divider. Its output connects directly to MCP3008 CH5. Although the module may be labeled \"0–25 V,\", that full range assumes a 5 V ADC reference. With this project's 3.3 V MCP3008 reference, the maximum measurable input is 16.5 V. The documented 14.4 V battery maximum is below that limit.
 
 This module has **5 connection points, on two different sides** — don't confuse them:
 
@@ -221,14 +196,12 @@ This module has **5 connection points, on two different sides** — don't confus
 | **+** |Output/logic (to Pi)|3.3V Pi (Pin 1 or 17)|
 | **−** | Output/logic (to Pi) | Common ground |
 | **S** |Output/logic (to Pi)|**DIRECT** to MCP3008 **CH5** (without LLC)|
-| **anode / IN+** |Input (measured)| Terminal Battery+ (12V LiFePO4/sejenis, max 14.4V) |
+| **anode / IN+** | Input (measured) | Battery+ (12 V LiFePO4, maximum 14.4 V) |
 | **cathode / IN−** |Input (measured)| Terminal Battery− |
 
-The conversion formula is in `sensors/battery.py`. Calibration `BATTERY_MAX_V` /
-`BATTERY_MIN_V` in `.env` according to your battery specifications — **`BATTERY_MAX_V`
-already set to 14.4V** (confirmed). `BATTERY_MIN_V` (default 10.7V)
+The conversion formula is in `sensors/battery.py`. Set `EFWS_BATTERY_MAX_V` and `EFWS_BATTERY_MIN_V` in `.env` for your battery. Their current defaults are 14.4 V and 10.7 V.
 
-### Flame Sensor (AO, analog) — NOT via LLC
+### Flame sensor (analog output) — direct to ADC
 
 | Pin sensor |Connect to|
 |-----------|-----------|
@@ -236,10 +209,7 @@ already set to 14.4V** (confirmed). `BATTERY_MIN_V` (default 10.7V)
 | GND | Common ground |
 | AO | Directly to MCP3008 **CH6** (without LLC) |
 
-This module's AO signal is native 3.3V, no need for step-down. **Voltage threshold
-not calibrated to physical unit** (`FLAME_AO_THRESHOLD_V`, 1.65V placeholder)
-— see calibration procedure in docstring `sensors/flame.py`. DO NOT use
-GPIO/DO — this sensor is purely read via MCP3008.
+The documented AO signal is within the 3.3 V ADC range. The default `FLAME_AO_THRESHOLD_V` of 1.65 V is a placeholder; follow the calibration notes in `sensors/flame.py` before deployment. This implementation reads AO through the MCP3008 and does not use the sensor's digital output.
 
 ### RS485 Anemometer (Modbus RTU) — Wind Speed
 |Connection|Connect to|
@@ -258,23 +228,21 @@ Port `/dev/ttyUSB0`, Slave ID `2`, Baudrate `9600` — already default in
 
 | Cable | Connect to |
 |-------|-----------|
-| Red (VCC) |3.3V (pin 1 or 17)|
+| Red (VCC) | Supply specified by the installed sensor module; the Indonesian source conflicts between 3.3 V and 5 V |
 | Black (GND) | GND |
-| Yellow (sensor TX) | GPIO14 / pin 8 (RXD Pi) |
-| Green (sensor RX) | GPIO15 / pin 10 (TXD Pi) |
+| Yellow (sensor TX) | Pi RXD: GPIO15 / physical pin 10 |
+| Green (sensor RX) | Pi TXD: GPIO14 / physical pin 8 |
 
-Protocol: text line `*<kode>#` via UART software `/dev/serial0`, code
-1-8 = N/NE/E/SE/S/SW/W/NW. Baudrate default 9600 (`EFWS_WIND_DIR_BAUD`).
+The sensor sends text lines in the form `*<code>#` over `/dev/serial0`. Codes 1–8 represent N, NE, E, SE, S, SW, W, and NW. The default baud rate is 9,600 (`EFWS_WIND_DIR_BAUD`).
 
-> ⚠️ **Must check before installing:** on Raspberry Pi 4, GPIO14/15
-> The default is Bluetooth (mini-UART whose baud rate also floats
-> follows the frequency VPU). So that this sensor is stable:
+> The Pi's UART input is 3.3 V tolerant. If the sensor transmits at 5 V, use an appropriate level converter before connecting its TX wire to GPIO15.
+
+> **Serial setup:** On Raspberry Pi 4, Bluetooth can occupy the stable PL011 UART, leaving GPIO14/15 on the clock-sensitive mini-UART. To give this sensor a stable serial port:
 > 1. `sudo raspi-config` → Interface Options → Serial Port → login shell
 >    via serial: **No**, hardware serial port: **Yes**.
 > 2. Add `dtoverlay=disable-bt` in `/boot/config.txt`, then
 >    `sudo systemctl disable hciuart`, then reboot.
-> 3. After rebooting, `/dev/serial0` will automatically connect to PL011 (full
->    stable UART), not mini-UART.
+> 3. After rebooting, verify that `/dev/serial0` points to PL011.
 >
 > If this step has not been done, the sensor may "appear" to be running
 > but the data is random/intermittent.
@@ -300,12 +268,17 @@ python3 tests/test_sim_detector.py   # confirm which module is detected
 
 ### 5V Relay → 12V Siren
 
-```
-Control side (Pi 3.3V GPIO): High power side (12V):
-  GPIO27 ──────────────► IN relay       Battery+ ─── relay COM
-5V ──────────────► VCC relay Relay NO ─── Siren (+)
-GND ──────────────► GND relay Siren (−) ─── Battery−
-```
+| Relay control connection | Wire to |
+| --- | --- |
+| Relay IN | Pi GPIO27 (3.3 V control signal; verify relay input compatibility) |
+| Relay VCC | 5 V supply |
+| Relay GND | Common ground |
+
+| Siren power connection | Wire to |
+| --- | --- |
+| Relay COM | Battery+ (12 V) |
+| Relay NO | Siren positive terminal |
+| Siren negative terminal | Battery− |
 
 > ⚠️ The siren's 12V line should **never** touch any of the Pi pins.
 > There is no separate buzzer — this one relay handles 2 levels of escalation
@@ -335,7 +308,7 @@ The main loop evaluates alarms locally. The telemetry publisher saves a reading 
 
 | Load |Voltage|Source|Notes|
 |-------|---------|--------|---------|
-| Raspberry Pi 4 | 5V | Buck converter output |Via GPIO pin 2/4 or USB-C|
+| Raspberry Pi 4 | 5 V | Buck converter output | Supply through USB-C with a suitable regulated source |
 | MCP3008 VDD/VREF | 3.3V | Pi 3.3V rail | |
 | BME280 | 3.3V | Pi 3.3V rail |I2C directly, without LLC|
 | Rainfall SEN0575 | 3.3V | Pi 3.3V rail |The bus is the same as BME280|
@@ -344,10 +317,11 @@ The main loop evaluates alarms locally. The telemetry publisher saves a reading 
 |MQ-2 / MQ-135 heaters| 5V |Direct buck converter|~150mA each|
 | Soil probe ×2 |5V or 3.3V|According to the probe datasheet| |
 | Submersible pressure sensor | 12-24V (loop) |**PSU is separate**, not from Pi/buck 5V|Loop-powered, R_BURDEN 100Ω, direct to CH4|
-|Voltage sensor module (battery)|Measuring side: passive, tap Battery+/−. Logic side ("+"/"−"): **3.3V from Pi**|Pi 3.3V rail (for its "+"/"−" logic pins)|**NOT no supply** — mandatory "+"/"−" pins to 3.3V/GND Pi, direct to CH5|
+| Battery voltage module | Battery+/Battery− measurement terminals; 3.3 V/GND on the documented Pi-side pins | Pi 3.3 V rail for the Pi-side pins | Sensor output `S` goes directly to CH5; confirm the module's pin labels before wiring |
 | Flame sensor |3.3-5V according to datasheet|According to the module datasheet|AO native 3.3V, direct to CH6|
+| Wind direction sensor | Per installed module datasheet | Verify before wiring | Pi RX on GPIO15 accepts 3.3 V UART signals; convert a 5 V sensor TX |
 | RS485 anemometer |12V or 5V|According to the unit datasheet| Slave ID 2, Baudrate 9600 |
-| A7670E/SIM7600 |5V or 3.7-4.2V|Fits HAT board| |
+| A7670E/SIM7600 | Per modem/HAT specification | HAT or regulated external supply | Install only one modem |
 |Relay coils| 5V | Pi 5V rail | |
 |Siren| 12V | Battery (via relay NO/COM) | |
 
@@ -374,11 +348,11 @@ The main loop evaluates alarms locally. The telemetry publisher saves a reading 
 [ ] Anemometer RS485: Slave ID 2, Baudrate 9600 (default in settings.py)
 [ ] Wind Direction: dtoverlay=disable-bt is set on /boot/config.txt, console-over-serial is disabled
 
-Verifikasi software:
+Software checks:
 [ ] ls /dev/spidev*    → /dev/spidev0.0 exists
 [ ] i2cdetect -y 1 → TWO addresses appear: 0x76 (BME280) and 0x1D (Rainfall)
 [ ] ls /dev/ttyUSB*    → several ports exist (modem + anemometer)
 [ ] python3 tests/test_all_sensors.py → all sensors OK
-[ ] python3 tests/test_offline_queue_integrity.py → integritas queue OK
+[ ] python3 tests/test_offline_queue_integrity.py → queue integrity OK
 [ ] python3 tests/test_sim_detector.py → SIM module identified
 ```

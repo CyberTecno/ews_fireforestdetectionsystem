@@ -12,7 +12,7 @@ EFWS operates off grid. A solar panel charges a LiFePO4 battery, which supplies 
 | Charge controller | 12 V LiFePO4 battery | Manages charging and low-voltage protection. |
 | 12 V battery bus | 12 V to 5 V buck converter | Supplies the Raspberry Pi and 5 V loads. |
 | 12 V battery bus | Pressure sensor, RS485 anemometer, and siren through relay | Supplies 12 V loads. Check each device's rated voltage. |
-| Pi 3.3 V rail | MCP3008 VDD/VREF, BME280, rainfall sensor, wind direction sensor, and low-voltage side of the level converter | Supplies 3.3 V devices. |
+| Pi 3.3 V rail | MCP3008 VDD/VREF, BME280, rainfall sensor, and low-voltage side of the level converter | Supplies verified 3.3 V devices. Check the wind direction module's voltage requirements separately. |
 | 5 V rail | MQ-2, MQ-135, relay module, and high-voltage side of the level converter | Supplies 5 V devices. |
 | Battery terminals | Voltage sensor module, then MCP3008 CH5 | Measures battery voltage without using the buck converter output. |
 
@@ -44,9 +44,7 @@ The pressure sensor's 4–20 mA loop uses a 100 Ω burden resistor and connects 
 | USB output |Dual USB 5 V (external device charging)|
 | Features |Charge voltage setting, low-voltage disconnect, battery type selection|
 
-> **Setting notes:** Make sure the battery type is set to **LiFePO4** (not Lead-Acid/AGM)
-> so that the charging and cut-off voltages match the chemical characteristics of LiFePO4
-> (charge ≈ 14.4 V, cut-off ≈ 10–11 V).
+> **Controller settings:** Select the LiFePO4 battery profile and confirm charging and disconnect voltages against the specific battery and controller manuals. The application's percentage references below do not set the controller's cutoff.
 
 ---
 
@@ -62,10 +60,9 @@ The pressure sensor's 4–20 mA loop uses a 100 Ω burden resistor and connects 
 
 The full and empty values above are used to estimate battery percentage. They do not configure the charge controller's physical cutoff. Set the controller for the specific battery and verify its limits against the battery datasheet.
 
-### How EFWS Reads Battery Level
+### How EFWS reads battery level
 
-DC 0-25 V module voltage sensor (see §6) taps directly to **Battery+ / Battery−**
-(not from the buck converter output). Calculation in `sensors/battery.py`:
+The battery voltage module measures **Battery+ / Battery−**, rather than the buck converter output. `sensors/battery.py` calculates:
 
 ```
 V_battery = (raw_ADC / 1023) × BATTERY_SENSOR_MAX_V
@@ -76,7 +73,7 @@ With `BATTERY_SENSOR_MAX_V = 16.5 V` (= VREF 3.3 V × 1:5 divider ratio module).
 
 ---
 
-## 4. Buck Converter (12 V → 5 V)
+## 4. Buck converter (12 V → 5 V)
 
 | Parameter | Value |
 |-----------|-------|
@@ -84,13 +81,13 @@ With `BATTERY_SENSOR_MAX_V = 16.5 V` (= VREF 3.3 V × 1:5 divider ratio module).
 | Output | 5 V DC |
 |Output max current| 3–5 A |
 | Efficiency | > 90% |
-|Function|Supplying Raspberry Pi (via USB-C) and HV side Logic Level Converter|
+| Function | Supplies the Raspberry Pi through USB-C and other verified 5 V loads |
 
 ---
 
-## 5. Distribution & Power Consumption Estimation
+## 5. Power consumption estimate
 
-| Component |Voltage|Typical Flow|Power|
+| Component | Voltage | Typical current | Power |
 |----------|----------|-------------|------|
 | Raspberry Pi 4 (idle-moderate) | 5 V | ~0.6–1.0 A | ~3–5 W |
 | A7670E (LTE transmit) | ~3.7 V (internal) | ~0.5 A peak | ~2 W peak |
@@ -103,15 +100,13 @@ With `BATTERY_SENSOR_MAX_V = 16.5 V` (= VREF 3.3 V × 1:5 divider ratio module).
 |**Total (without siren)**| — | — | **~8–10 W** |
 |**Total (siren active)**| — | — | **~15–24 W** |
 
-> A 100 W panel under good irradiation conditions (~5 peak-sun hours/day) produces
-> ~500 Wh/day. Normal consumption is ~8–10 W × 24 hours = ~192–240 Wh/day → surplus
-> for battery charging. Sirens are assumed to be permanently inactive.
+> With five peak-sun hours, a 100 W panel has a theoretical yield of about 500 Wh/day before controller, wiring, temperature, and weather losses. An 8–10 W continuous load uses about 192–240 Wh/day. Size the battery and panel for local conditions and modem transmit peaks; the siren adds a temporary load.
 
 ---
 
-## 6. Safety Notes
+## 6. Safety notes
 
 - **Do not connect** the load directly to the solar panel terminal without going through the charge controller.
 - **Battery polarity** must be checked before wiring — the controller has reverse polarity protection, but other modules (buck converter, relay) can be permanently damaged if reversed.
-- **Grounding:** make sure all GND are connected to a common ground point (common ground) to avoid ground loops that cause noisy ADC readings.
+- **Grounding:** connect the Pi, ADC, sensors, and loop supply to the common reference required by the wiring design. Check for ground loops that could add noise to ADC readings.
 - The siren (~1 A at 12 V) must be powered through the relay, never from a Pi GPIO pin.

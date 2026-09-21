@@ -2,6 +2,8 @@
 
 These guides cover the Raspberry Pi hardware, deployment, and runtime behavior of the Forest Fire Early Warning System.
 
+This is the English documentation for the [Indonesian guides on `main`](https://github.com/CyberTecno/ews_fireforestdetectionsystem/tree/main/docs). Technical corrections made during translation are called out in the relevant guide.
+
 ## Start here
 
 1. Review the [sensor specifications](SensorSpecification.md) to identify the modules and their voltage requirements.

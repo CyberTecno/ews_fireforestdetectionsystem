@@ -31,7 +31,7 @@ The 100 W solar panel charges a 12 V LiFePO4 battery through a solar charge cont
 | Offline queue worker | `EFWS_CONNECTIVITY_CHECK_SEC` (120 s) | Retry queued API payloads in FIFO order when connectivity returns. |
 | Retention worker | 6 hours | Remove old sensor readings, completed or expired queue entries, and old location logs. |
 
-The sampling loop does not send network requests, write telemetry to SQLite, or acquire GPS. Publishers use a locked snapshot of the latest sensor data.
+The sampling loop does not send network requests, write telemetry to SQLite, or acquire GPS. Publishers use a locked snapshot of the latest sensor data. Each background worker runs independently, so a failure in one worker does not directly stop the others.
 
 ## API requests
 
@@ -48,11 +48,19 @@ The acknowledgment endpoint is event-driven; it has no separate timer.
 
 1. The main loop reads each sensor and calculates `smokeLevel` from MQ-2 and MQ-135 readings.
 2. It resolves each active threshold from the remote configuration when available, otherwise from the local fallback. `windDangerThreshold` remains local.
-3. After the configured number of consecutive critical readings, it sets `_emergency`, activates the critical siren level, and wakes the telemetry publisher for an immediate send.
+3. After the configured number of consecutive critical readings, it sets `_emergency`, activates the critical siren level, sets `_emergency_immediate_send` once, and wakes the telemetry publisher through `_telemetry_wake`.
 4. When readings return to normal, it clears `_emergency`, returns the siren to normal, and restores the standard telemetry interval.
 5. A sensor that fails initialization uses `NullSensor`; missing values do not by themselves trigger an alarm.
 
 The heartbeat and location intervals stay fixed during an emergency. Siren control runs locally and does not wait for API responses.
+
+### Threshold resolution
+
+`resolve_active_thresholds(local, remote_config)` checks each field separately. A non-null remote value overrides the local value; otherwise, the local fallback is used. `windDangerThreshold` always comes from the local configuration because it is absent from the API contract.
+
+### Alarm levels
+
+`AlarmController` uses one relay and one siren. Warning pulses the relay for 0.4 seconds on and 1.6 seconds off. Critical holds it on continuously. Alarm decisions are made locally, while the backend remains responsible for its authoritative alarm records.
 
 ## Telemetry and offline queue
 
@@ -60,21 +68,30 @@ The heartbeat and location intervals stay fixed during an emergency. Siren contr
 2. It saves the reading and full API payload to SQLite before sending.
 3. On a network or server failure, it adds the payload to `api_queue`.
 4. The queue worker checks connectivity every 120 seconds and retries a batch of up to 10 items in FIFO order. Successful items are marked sent. A 4xx response is marked failed so it cannot block later items; a renewed connection failure stops the batch.
-5. Items are skipped after 10 failures. The retention worker cleans completed or expired entries every six hours.
+5. Items are skipped after 10 failures. Every six hours, the retention worker cleans completed or expired queue entries, old sensor readings, and location logs older than three days.
 
 The database stores `sensor_readings`, `api_queue`, and `location_log`. It does not store alarm levels or the backend's threshold decisions.
 
 ## Location fallback
 
-On each location cycle, the modem attempts a GNSS fix. A successful fix is sent with source `gps`. If the current attempt fails after a previous fix, the cached position is sent as `gps_cached`. If the device has never obtained a fix, coordinates from `.env` are sent as `config`.
+On each 1,800-second location cycle, the modem enables GNSS and polls for a fix. The A7670E path uses `AT+CGNSSPWR=1` and `AT+CGPSINFO`; the SIM7600 implementation uses its own GNSS commands. A successful fix is sent with source `gps`. If the current attempt fails after a previous fix, the cached position is sent as `gps_cached`. If the device has never obtained a fix, coordinates from `.env` are sent as `config`.
 
 ## Module responsibilities
 
 | Path | Responsibility |
 | --- | --- |
-| `sensors/` | Sensor drivers, `NullSensor` fallback, and mock sensors for `EFWS_RUN_MODE=mock`. |
-| `alarm/` | Relay driver and siren controller. Warning pulses the relay; critical keeps it on continuously. |
-| `communication/` | A7670E/SIM7600 detection, modem support, REST publishing, and offline queue handling. |
-| `database/` | SQLite readings, queue, and location log. |
-| `config/` | Environment settings, local fallback thresholds, and per-field threshold resolution. |
+| `sensors/` | Hardware drivers with a `.read()` method, `null_sensor.py` fallback, and `mock_sensors.py` for `EFWS_RUN_MODE=mock`. |
+| `alarm/` | `relay.py` controls GPIO; `siren.py` implements warning and critical patterns with one relay. |
+| `communication/` | `sim_detector.py` identifies an A7670E or SIM7600 from its `ATI` response and caches the choice in `.sim_cache`. `api_publisher.py` is the REST egress and offline-queue path. |
+| `database/` | `db_manager.py` stores `sensor_readings`, `api_queue`, and `location_log` in SQLite. |
+| `config/` | `settings.py` centralizes environment settings, `thresholds.json` provides local siren fallbacks, and `threshold_resolver.py` merges remote and local values by field. |
 | `main.py` | Initializes components and coordinates the six runtime loops. |
+
+## Design principles
+
+- Write telemetry to SQLite before making an API request. Failed deliveries enter the offline queue for automatic retry.
+- Evaluate thresholds and control the siren locally so a network outage does not delay an alarm.
+- Apply remote thresholds by field and retain local fallback values.
+- Change only the telemetry interval during an emergency; location and heartbeat keep their regular schedules.
+- Treat failed sensor initialization as missing data through `NullSensor`, which does not create a false positive by itself.
+- Detect the installed modem at startup so the same application supports either A7670E or SIM7600.

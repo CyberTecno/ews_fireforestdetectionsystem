@@ -2,7 +2,11 @@
 
 > **Scope:** This guide covers the SIM7600E-H modem. EFWS also supports A7670E, but its network setup is not covered here. Some A7670E firmware identifies itself as SIM7670E in the ATI response; the detector handles both names.
 
-This document contains a tutorial for setting up **SIM7600E-H 4G LTE modem** on **Raspberry Pi 4** so that it becomes the main internet connection, while **WiFi becomes the backup connection**.
+This guide configures a SIM7600E-H modem as the Raspberry Pi 4's primary internet connection, with Wi-Fi as backup.
+
+Use the [deployment guide](Deployment.md) for the complete EFWS installation. This page focuses on the modem and network routes.
+
+**Route through this guide:** [Check power and USB](#2-check-the-raspberry-pi-power) → [install the network services](#4-install-networkmanager-and-modemmanager) → [set 4G as primary](#7-create-a-manual-4g-connection) → [set Wi-Fi as backup](#8-make-wifi-a-backup) → [test fallback](#11-test-automatic-fallback).
 
 Final target:
 
@@ -11,21 +15,21 @@ SIM7600E 4G = primary connection
 WiFi = automatic backup/fallback connection
 ```
 
-If the SIM7600E modem is removed, the Raspberry Pi automatically returns to using WiFi. If the modem is installed again, the Raspberry Pi will try again to use a 4G connection.
+When the modem disconnects, NetworkManager should fall back to Wi-Fi. When it reconnects, the lower 4G route metric should make it primary again. Verify both transitions in [the fallback test](#11-test-automatic-fallback).
 
 ---
 
-## 1. Hardware used
+## 1. Hardware
 
 - Raspberry Pi 4
 - SIM7600E-H 4G HAT / USB modem
-- SIM card is active
+- Active SIM card with a suitable data plan
 - LTE antenna
 - USB data cable
 - Stable Raspberry Pi power supply
-- WiFi connection as backup
+- Working Wi-Fi connection for backup
 
-> Important note: the 4G modem must be connected to the Raspberry Pi via **USB data**. GPIO alone is usually not enough for the modem to appear as an internet device.
+> Connect the modem to the Pi with a **USB data cable**. A GPIO connection alone does not expose it as a network device.
 
 ---
 
@@ -37,26 +41,21 @@ Before setting up the modem, check whether the Raspberry Pi is experiencing unde
 vcgencmd get_throttled
 ```
 
-Target ideal:
+Expected result:
 
 ```text
 throttled=0x0
 ```
 
-If it appears:
+If the output is:
 
 ```text
 throttled=0x50000
 ```
 
-meaning that the Raspberry Pi has experienced undervoltage since booting. Use a more stable power supply, at least:
+the Pi has recorded an undervoltage event since boot. Check the supply and cable. The Pi 4 needs a stable 5 V / 3 A supply; allow additional current capacity for the modem according to its hardware specifications.
 
-```text
-Quality 5 V 3 A supply
-safer 5V 4A–5A if a modem is used
-```
-
-4G modems can draw quite a large current when searching for a network.
+Modems can draw brief current peaks while searching for a network or transmitting.
 
 ---
 
@@ -68,7 +67,7 @@ Plug the SIM7600E modem into the Raspberry Pi's USB port, then run:
 lsusb
 ```
 
-The target appears devices such as:
+Look for a device such as:
 
 ```text
 ID 1e0e:9001 Qualcomm / Option SimTech
@@ -81,26 +80,26 @@ SIMCom
 Qualcomm
 ```
 
-Then check the serial port:
+Then check the serial ports:
 
 ```bash
 ls /dev/ttyUSB*
 ```
 
-Target:
+Example:
 
 ```text
 /dev/ttyUSB0 /dev/ttyUSB1 /dev/ttyUSB2 /dev/ttyUSB3 /dev/ttyUSB4
 ```
 
-If it doesn't appear, try:
+If no modem ports appear:
 
 ```text
-1. Replace the USB cable, make sure the data cable
+1. Replace the USB cable with a known data-capable cable
 2. Press the modem PWRKEY / POWER button 2–3 seconds
 3. Try a different USB port
 4. Use a more powerful power supply
-5. Try powered USB hub
+5. Try a powered USB hub
 ```
 
 To view logs when the modem is plugged in:
@@ -109,40 +108,36 @@ To view logs when the modem is plugged in:
 sudo dmesg -wH
 ```
 
-Then unplug the modem and see if the log `new USB device`, `SIMCom`, or `ttyUSB` appears.
+Reconnect the modem and look for `new USB device`, `SIMCom`, or `ttyUSB` messages.
 
-Exit log:
-
-```text
-CTRL + C
-```
+Press `Ctrl+C` to stop following the log.
 
 ---
 
 ## 4. Install NetworkManager and ModemManager
 
-Install manually:
+Install the packages:
 
 ```bash
 sudo apt update
 sudo apt install -y modemmanager network-manager
 ```
 
-Enable the service:
+Enable both services:
 
 ```bash
 sudo systemctl enable --now ModemManager
 sudo systemctl enable --now NetworkManager
 ```
 
-Restart service:
+Restart them:
 
 ```bash
 sudo systemctl restart ModemManager
 sudo systemctl restart NetworkManager
 ```
 
-Reboot to clean:
+Reboot to apply the network changes:
 
 ```bash
 sudo reboot
@@ -150,7 +145,7 @@ sudo reboot
 
 ---
 
-## 5. Check ModemManager detects the modem
+## 5. Confirm ModemManager detects the modem
 
 Once the Raspberry Pi turns on again:
 
@@ -158,7 +153,7 @@ Once the Raspberry Pi turns on again:
 mmcli -L
 ```
 
-Example of a correct result:
+Example result:
 
 ```text
 /org/freedesktop/ModemManager1/Modem/0 [QUALCOMM INCORPORATED] SIMCOM_SIM7600E-H
@@ -179,13 +174,13 @@ cdc-wdm0       gsm       disconnected  --
 eth0           ethernet  unavailable   --
 ```
 
-If `cdc-wdm0` appears as `gsm`, it means the modem is ready to make a connection.
+If `cdc-wdm0` appears as `gsm`, ModemManager has exposed a cellular device.
 
 ---
 
 ## 6. Do not use manual AT when using NetworkManager
 
-If previously using Minicom and running:
+If you previously opened the modem in Minicom and sent commands such as:
 
 ```text
 AT+NETOPEN
@@ -193,11 +188,9 @@ AT+CGACT
 AT+HTTPINIT
 ```
 
-It's best to stop using manual AT for internet connections first.
+stop controlling the data connection with manual AT commands. NetworkManager and ModemManager will manage it.
 
-NetworkManager + ModemManager will set up the modem connection automatically.
-
-If there is still a Minicom open:
+Close Minicom if it is still open:
 
 ```text
 CTRL + A
@@ -205,7 +198,7 @@ X
 Yes
 ```
 
-Or turn it off from the terminal:
+Alternatively, stop any open serial terminal process:
 
 ```bash
 sudo killall minicom 2>/dev/null
@@ -216,15 +209,15 @@ sudo killall picocom 2>/dev/null
 
 ## 7. Create a manual 4G connection
 
-For APN, many Indonesian providers can use:
+Many Indonesian providers use the APN:
 
 ```text
 internet
 ```
 
-Including AXIS/XL, Telkomsel/by.U, and several Indosat.
+Check the APN for your SIM provider; `internet` is common for AXIS/XL, Telkomsel/by.U, and some Indosat plans.
 
-Make a connection:
+Create a connection:
 
 ```bash
 sudo nmcli connection add type gsm ifname cdc-wdm0 con-name "EWS-4G" apn "internet"
@@ -236,7 +229,7 @@ If the profile already exists, just update it:
 sudo nmcli connection modify "EWS-4G" gsm.apn "internet"
 ```
 
-Set 4G as primary connection:
+Give 4G a lower route metric than Wi-Fi:
 
 ```bash
 sudo nmcli connection modify "EWS-4G" \
@@ -257,7 +250,7 @@ sudo nmcli connection up "EWS-4G"
 
 ## 8. Make WiFi a backup
 
-View the WiFi connection name:
+Find your Wi-Fi connection profile:
 
 ```bash
 nmcli connection show
@@ -269,7 +262,7 @@ Example of WiFi name:
 netplan-wlan0-Uwaterloo
 ```
 
-Set WiFi as backup with larger route metrics:
+Set a larger Wi-Fi route metric:
 
 ```bash
 sudo nmcli connection modify "netplan-wlan0-Uwaterloo" \
@@ -279,11 +272,11 @@ sudo nmcli connection modify "netplan-wlan0-Uwaterloo" \
   ipv6.route-metric 600
 ```
 
-> Change `netplan-wlan0-Uwaterloo` according to the WiFi name that appears on your Raspberry Pi.
+> Replace `netplan-wlan0-Uwaterloo` with the Wi-Fi profile name shown on your Pi.
 
 ---
 
-## 9. Check that the main connection is via modem
+## 9. Verify the primary route
 
 Run:
 
@@ -291,7 +284,7 @@ Run:
 nmcli device status
 ```
 
-Target:
+Example:
 
 ```text
 cdc-wdm0       gsm       connected      EWS-4G
@@ -304,13 +297,13 @@ Check internet route:
 ip route get 8.8.8.8
 ```
 
-If 4G is the main one, the results usually show the modem interface, for example:
+If 4G is primary, the route should show the modem interface, for example:
 
 ```text
 dev wwan0
 ```
 
-or similar interface from the modem.
+The exact interface name varies by modem and driver.
 
 If it still shows:
 
@@ -318,7 +311,7 @@ If it still shows:
 dev wlan0
 ```
 
-This means that WiFi is still the main route and route metrics need to be checked again.
+Wi-Fi is still primary; inspect the configured route metrics.
 
 Test with ping:
 
@@ -328,11 +321,11 @@ ping -c 4 8.8.8.8
 
 ---
 
-## 10. Script automatically setup main 4G connection + backup WiFi
+## 10. Optional setup script for 4G and Wi-Fi
 
-This script **does not install packages**. Installing `network-manager` and `modemmanager` must be done manually as in the previous section.
+This standalone example automates the connection settings above. It **does not install packages**. Install `network-manager` and `modemmanager` first.
 
-Create files:
+Create the script file:
 
 ```bash
 nano ~/ews_network_setup.sh
@@ -704,7 +697,7 @@ Update again:
 
 ```bash
 sudo nmcli connection modify "EWS-4G" ipv4.route-metric 50
-sudo nmcli connection modify "NAMA_WIFI" ipv4.route-metric 600
+sudo nmcli connection modify "<your-wifi-profile>" ipv4.route-metric 600
 ```
 
 ### D. The internet modem is not working
@@ -760,7 +753,7 @@ sudo nmcli connection modify "EWS-4G" \
   ipv6.method ignore
 
 # Set WiFi backup
-sudo nmcli connection modify "NAMA_WIFI" \
+sudo nmcli connection modify "<your-wifi-profile>" \
   connection.autoconnect yes \
   connection.autoconnect-priority 0 \
   ipv4.route-metric 600 \
@@ -780,16 +773,9 @@ ping -c 4 8.8.8.8
 
 ## 16. Final connection layout
 
-```text
-Raspberry Pi 4
-├── SIM7600E-H 4G modem
-│   ├── APN: internet
-│   ├── Profile: EWS-4G
-│   └── Route metric: 50
-│
-└── WiFi backup
-├── Profile: netplan-wlan0-Uwaterloo / other name WiFi
-    └── Route metric: 600
-```
+| Connection | Example profile | Route metric | Role |
+| --- | --- | ---: | --- |
+| SIM7600E-H 4G | `EWS-4G` | 50 | Primary |
+| Wi-Fi | Your existing Wi-Fi profile | 600 | Backup |
 
-With this configuration, the Raspberry Pi will prioritize the 4G modem for the internet, while WiFi remains available as a backup.
+The smaller route metric makes 4G the preferred path while Wi-Fi remains available for fallback.

@@ -1,8 +1,6 @@
 # Sensor specifications
 
-Complete reference of all hardware components used in EFWS. For wiring and
-pin assignment, see [`docs/Pinout.md`](Pinout.md). For software configuration (channel
-ADC, address I2C, serial port), see [`config/settings.py`](../config/settings.py).
+This reference describes the hardware in the Indonesian `main/docs` source. For connections and corrected pin assignments, see [Pinout.md](Pinout.md). For configured ADC channels, I2C addresses, and serial ports, see [config/settings.py](../config/settings.py).
 
 ---
 
@@ -18,12 +16,12 @@ ADC, address I2C, serial port), see [`config/settings.py`](../config/settings.py
 | USB | 2× USB 3.0, 2× USB 2.0 |
 | GPIO | 40-pin header (BCM numbering) |
 | Display |2× Micro HDMI (up to dual 4K@60fps)|
-|Power supplies| USB-C 5 V / 3 A |
-|The interface used is EFWS| SPI (MCP3008), I2C (BME280 + Rainfall), UART (Wind Direction), USB (A7670E + RS485), GPIO (Relay, LED) |
+| Power supply | USB-C 5 V / 3 A |
+| Interfaces used by EFWS | SPI (MCP3008), I2C (BME280 and rainfall sensor), UART (wind direction), USB (modem and RS485), GPIO (relay and LED) |
 
-### Breakout: GPIO T-Cobbler
-The cable will facilitate the connection of the GPIO to the breadboard during
-development/prototyping. To PCB on permanent installation.
+### GPIO breakout
+
+A GPIO T-Cobbler makes breadboard wiring easier during development. Use a suitable permanent board or enclosure for field installation.
 
 ---
 
@@ -34,10 +32,10 @@ development/prototyping. To PCB on permanent installation.
 | Type | 10-bit SAR ADC, 8-channel single-ended |
 | Interface | SPI (bus 0, CE0) |
 | VREF | 3.3 V (= VDD) |
-| Resolusi | 1023 step (0–3.3 V per step ≈ 3.23 mV) |
+| Resolution | 1,024 codes (0–1,023), approximately 3.23 mV per code at 3.3 V VREF |
 |Use|Read MQ-2, MQ-135, Soil×2, Pressure, Battery, Flame|
 
-**Channel mapping (lihat `config/settings.py`):**
+**Channel mapping (from `config/settings.py`):**
 
 | CH | Sensor | Via LLC |Notes|
 |----|--------|---------|---------|
@@ -61,9 +59,7 @@ development/prototyping. To PCB on permanent installation.
 |LV side voltage|3.3 V (from Rail 3.3 V Pi)|
 |Channels used|4 of 4 (MQ-2, MQ-135, Soil Surface, Soil Deep)|
 
-> **Important:** This LLC is a **linear analog** level-shifter for the signal ADC.
-> Do not use digital type (TXS0108E, etc.) for this line — logic-level-shifter chip
-> digital only detects the threshold HIGH/LOW, it does not translate the analog voltage linearly.
+> **Hardware discrepancy:** The source guide describes a linear analog converter here, while its wiring guide specifies a four-channel I2C-style digital level converter. A digital converter does not preserve continuous analog voltage. The current wiring routes four analog sensors through it, so verify the actual installed part and calibrate the ADC readings. Never connect a 5 V sensor output directly to the 3.3 V MCP3008.
 
 ---
 
@@ -84,10 +80,9 @@ development/prototyping. To PCB on permanent installation.
 smokeLevel = (mq2_ppm / MQ2_CRIT_PPM × W_MQ2 + mq135_ppm / MQ135_CRIT_PPM × W_MQ135) × 100
 ```
 
-Default: `MQ2_CRIT_PPM = 1000`, `W_MQ2 = 0.55` (bobot 55%).
+Defaults: `MQ2_CRIT_PPM = 1000` and `W_MQ2 = 0.55` (55% weight).
 
-> **Note:** The MQ sensor requires a ~2 minute warm-up after power-on for readings
-> stable. Values ​​in the first minutes after booting may be inaccurate.
+> **Warm-up:** Allow approximately two minutes after power-on before relying on MQ readings. Early readings may be inaccurate.
 
 ---
 
@@ -95,7 +90,7 @@ Default: `MQ2_CRIT_PPM = 1000`, `W_MQ2 = 0.55` (bobot 55%).
 
 | Parameter | Value |
 |-----------|-------|
-|Detected gas| NH₃, NOx, Alcohol, Benzene, Smoke, CO₂ (indikatif) |
+| Detected gases | NH₃, NOx, alcohol, benzene, smoke, and indicative CO₂ readings |
 |Working voltage| 5 V DC |
 |Output is used| AOUT (analog) → LLC CH2 → MCP3008 CH1 |
 |Output is not used|DOUT (digital, unwired)|
@@ -130,7 +125,7 @@ Column `pressure_hpa` is saved in SQLite (`sensor_readings`) but not sent to API
 
 | Parameter | Value |
 |-----------|-------|
-| Type | Resistif (two metal probes) |
+| Type | Resistive (two metal probes) |
 |Working voltage| 5 V DC |
 |Output is used| AOUT (analog) → LLC → MCP3008 |
 |Number of probes| 2 (Surface CH2, Deep CH3) |
@@ -155,12 +150,12 @@ Column `pressure_hpa` is saved in SQLite (`sensor_readings`) but not sent to API
 
 | Parameter | Value |
 |-----------|-------|
-| Resolusi | ±0.2794 mm per tipping |
+| Resolution | Approximately 0.2794 mm per bucket tip |
 | Interface | I2C |
 |Address I2C|`0x1D` — shared bus with BME280, no conflict (`RAINFALL_I2C_ADDRESS`)|
 |Working voltage| 3.3 V |
 | Driver | `sensors/rainfall.py` |
-| PID/VID validasi |`0x100C0` / `0x3343` (checked when `__init__`)|
+| PID/VID validation | `0x100C0` / `0x3343` (checked during initialization) |
 
 **Available fields of the sensor:**
 
@@ -171,13 +166,9 @@ Column `pressure_hpa` is saved in SQLite (`sensor_readings`) but not sent to API
 | `tip_counter` |Raw tipping amount|
 | `working_time_hours` | Uptime sensor |
 
-**What was sent to API (`payload.telemetry[].rainfall`):**
-Cumulative delta since *previous* telemetry sending (`_rainfall_delta()` at `main.py`),
-not a 1 hour window — to match the actual send interval (30 minutes normal / 10 minutes emergency).
+**Value sent to the API (`payload.telemetry[].rainfall`):** The cumulative increase since the previous telemetry delivery, calculated by `_rainfall_delta()` in `main.py`. This matches the variable 30-minute or 10-minute send interval.
 
-**What is used to evaluate the alarm threshold:**
-`rainfall_last_hour_mm` (1 hour window from sensor) — due to evaluation of the running alarm every cycle
-sampling (3 minutes), not every telemetry transmission.
+**Value used for alarm evaluation:** `rainfall_last_hour_mm`, the sensor's rolling one-hour reading. The main loop checks it at each three-minute sampling cycle.
 
 ---
 
@@ -188,7 +179,7 @@ sampling (3 minutes), not every telemetry transmission.
 | Principle |Hydrostatic pressure → current 4–20 mA|
 |Depth range| 0–3 m |
 | Output | 4–20 mA (current loop) |
-|Power supplies| 12 V DC |
+| Power supply | 12 V DC |
 |Interface to Pi|100 Ω burden resistor → 0.4–2.0 V at 4–20 mA → MCP3008 CH4|
 | Driver | `sensors/pressure.py` |
 | Setting | `PRESSURE_BURDEN_OHM=100`, `PRESSURE_RANGE_M=3.0` |
@@ -201,8 +192,7 @@ depth_m  = pct × PRESSURE_RANGE_M
 pressure_bar = depth_m × 0.0980665
 ```
 
-**Fault detection:** `fault_open_loop=True` if the burden voltage is close to 0 V
-(cable broken or sensor not submerged / not pressurized).
+**Fault detection:** `fault_open_loop=True` when the burden voltage is near 0 V, indicating an open or unpowered current loop. A healthy sensor at zero pressure should still produce approximately 4 mA.
 
 > **Wiring note:** With the configured 100 Ω burden resistor, the 4–20 mA loop produces 0.4–2.0 V. This fits within the MCP3008's 3.3 V reference, so the pressure signal connects directly to CH4 without the logic-level converter. Keep MCP3008 VDD and VREF at 3.3 V.
 
@@ -212,18 +202,16 @@ pressure_bar = depth_m × 0.0980665
 
 | Parameter | Value |
 |-----------|-------|
-| Protokol | RS485 Modbus RTU |
-|Power supplies| 12 V DC |
+| Protocol | RS485 Modbus RTU |
+| Power supply | 12 V DC |
 | Slave ID default | `2` (`EFWS_ANEM_SLAVE`) |
 | Baudrate | 9600 bps (`EFWS_ANEM_BAUD`) |
 | Speed register | `0x0000` (`EFWS_ANEM_REGISTER`) |
-| Desimal |1 digit (`EFWS_ANEM_DECIMALS`) — raw value divided by 10|
+| Decimal places | 1 (`EFWS_ANEM_DECIMALS`); raw value divided by 10 |
 |Interface to Pi| Industrial USB-to-RS485 converter → `/dev/ttyUSB0` |
 | Driver | `sensors/anemometer.py` (`minimalmodbus`) |
 
-**Port scan protection:** `scan_ports()` in `sim_detector.py` exclude
-`ANEMOMETER_PORT` of the 4G modem scan candidate, as it sends `AT` to the Modbus port
-will damage the running RTU frame.
+**Port scan protection:** `scan_ports()` in `sim_detector.py` excludes `ANEMOMETER_PORT` from modem detection. Sending an `AT` command to the Modbus port could interrupt an RTU frame.
 
 ---
 
@@ -231,7 +219,7 @@ will damage the running RTU frame.
 
 | Parameter | Value |
 |-----------|-------|
-| Konversi | USB ↔ RS485 |
+| Conversion | USB ↔ RS485 |
 | Protocol | Supports Modbus RTU |
 | Protection | ESD, galvanic isolation |
 |Ports on the Pi|`/dev/ttyUSB0` (default, can be different depending on the enumeration order USB)|
@@ -242,26 +230,27 @@ will damage the running RTU frame.
 
 | Parameter | Value |
 |-----------|-------|
-| Principle | Hall Effect (sensor A3144) + 1 magnet per posisi |
+| Principle | Hall effect (A3144 sensor) with one magnet per position |
 |Direction detected|8 directions (N, NE, E, SE, S, SW, W, NW)|
-|Working voltage| 5 V DC |
+| Working voltage | Check the installed module datasheet; the source guide gives both 5 V and 3.3 V |
 | Interface | UART TTL (RX/TX) |
 | Baudrate | 9600 bps (`EFWS_WIND_DIR_BAUD`) |
 |Ports on the Pi| `/dev/serial0` (GPIO14/GPIO15) — `EFWS_WIND_DIR_PORT` |
-| Protokol frame | `*<kode>#` → kode 1–8 |
+| Frame format | `*<code>#` → codes 1–8 |
 | Material housing |PLA+ (indoor/prototype) or ASA (outdoor, UV resistant)|
 |Cable length| ±40 cm |
 | Driver | `sensors/wind_direction.py` |
 
-**Wiring UART:**
-```
-Sensor VCC  (merah)  → 3.3 V Pi
-Sensor GND  (hitam)  → GND
-Sensor TX   (kuning) → GPIO14 (Pin 8, RXD Pi)
-Sensor RX   (hijau)  → GPIO15 (Pin 10, TXD Pi)
-```
+**UART wiring:** Confirm the sensor's supply and signal voltages from its datasheet before connecting it. The Pi UART accepts 3.3 V signals; a 5 V sensor TX requires proper level conversion.
 
-**Mandatory RPi prerequisites** (see details in `docs/Pinout.md`):
+| Sensor wire | Raspberry Pi connection |
+| --- | --- |
+| Red (VCC) | Verified supply for the installed sensor module |
+| Black (GND) | Common ground |
+| Yellow (sensor TX) | Pi RXD, GPIO15 / physical pin 10 |
+| Green (sensor RX) | Pi TXD, GPIO14 / physical pin 8 |
+
+**Raspberry Pi prerequisites** (see [Pinout.md](Pinout.md)):
 - `dtoverlay=disable-bt` in `/boot/config.txt` → move PL011 UART to GPIO14/15
 - Console serial login is disabled via `raspi-config`
 - Without both: baudrate drift / random data due to mini-UART clock following VPU
@@ -285,8 +274,7 @@ Sensor RX   (hijau)  → GPIO15 (Pin 10, TXD Pi)
 V_battery = (raw_ADC / 1023) × 16.5
 ```
 
-> **Input safe limit:** 16.5 V (= VREF 3.3 V × ratio 5). The value "25 V" is printed
-> in the module applies if the ADC is assigned VREF 5 V — not the case for this project.
+> **Input limit:** 16.5 V (= 3.3 V VREF × divider ratio 5). A printed 25 V module rating assumes a 5 V ADC reference, which this project does not use.
 > LiFePO4 battery max 14.4 V is still within safe limits (headroom ~2.1 V).
 
 ---
@@ -302,7 +290,7 @@ V_battery = (raw_ADC / 1023) × 16.5
 | Detection threshold |`FLAME_AO_THRESHOLD_V = 1.65 V` (initial estimate; calibration required)|
 | Driver | `sensors/flame.py` |
 
-**Prosedur kalibrasi lapangan:**
+**Field calibration:**
 1. `python sensors/flame.py` → record the AO value under normal conditions (no fire)
 2. Bring a small flame (match / candle, safe distance) → record the AO value when there is a fire
 3. Set `EFWS_FLAME_AO_THRESHOLD_V` in `.env` to a value between the two
